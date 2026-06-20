@@ -8,6 +8,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using System.Windows.Shapes;
 
+
 namespace HandwritingFontCreator.UI;
 
 public partial class MainWindow : Window
@@ -20,6 +21,7 @@ public partial class MainWindow : Window
     private readonly Stack<List<Point>> _redoStack = [];
 
     private string CurrentTemplate = "Default";
+    private string CurrentCharacter = "A";
 
     private string GetTemplateFolder()
     {
@@ -48,33 +50,94 @@ public partial class MainWindow : Window
             DrawNotebookLines();
         };
 
-        for (char c = 'A'; c <= 'Z'; c++)
-        {
-            LetterComboBox.Items.Add(c.ToString());
-        }
+        CreateCharacterGrid();
+    }
 
-        for (char c = 'a'; c <= 'z'; c++)
-        {
-            LetterComboBox.Items.Add(c.ToString());
-        }
+    private void CreateCharacterGrid()
+    {
+        string chars =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+            "abcdefghijklmnopqrstuvwxyz" +
+            "0123456789";
 
-        for (char c = '0'; c <= '9'; c++)
+        foreach (char c in chars)
         {
-            LetterComboBox.Items.Add(c.ToString());
-        }
+            var button = new Button
+            {
+                Content = c.ToString(),
+                Margin = new Thickness(2),
+                Height = 35
+            };
 
-        LetterComboBox.SelectedIndex = 0;
+            button.Click += CharacterButton_Click;
+            CharacterGrid.Children.Add(button);
+        }
+    }
+
+    private void CharacterButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button)
+            return;
+
+        CurrentCharacter =
+            button.Content?.ToString() ?? "A";
+
+        LoadCurrentCharacter();
+    }
+
+    private void LoadCurrentCharacter()
+    {
+        string filePath =
+            System.IO.Path.Combine(
+                GetTemplateFolder(),
+                $"{CurrentCharacter}.json");
+
+        DrawingCanvas.Children.Clear();
+        DrawNotebookLines();
+
+        _strokes.Clear();
+
+        if (!File.Exists(filePath))
+            return;
+
+        string json = File.ReadAllText(filePath);
+
+        StrokeData? letter =
+            JsonSerializer.Deserialize<StrokeData>(json);
+
+        if (letter == null)
+            return;
+
+        foreach (var stroke in letter.Strokes)
+        {
+            var line = new Polyline
+            {
+                Stroke = Brushes.Blue,
+                StrokeThickness = 3
+            };
+
+            var currentStroke = new List<Point>();
+
+            foreach (var point in stroke.Points)
+            {
+                var p = new Point(point.X, point.Y);
+
+                currentStroke.Add(p);
+
+                line.Points.Add(p);
+            }
+
+            _strokes.Add(currentStroke);
+
+            DrawingCanvas.Children.Add(line);
+        }
     }
 
     private string GetSelectedFilePath()
     {
-        string letter =
-            LetterComboBox.SelectedItem?.ToString()
-            ?? "A";
-
         return System.IO.Path.Combine(
             GetTemplateFolder(),
-            $"{letter}.json");
+            $"{CurrentCharacter}.json");
     }
 
     private void DrawingCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)

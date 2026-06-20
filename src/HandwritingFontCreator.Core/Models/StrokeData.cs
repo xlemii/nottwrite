@@ -3,9 +3,7 @@ namespace HandwritingFontCreator.Core.Models;
 public class StrokeData
 {
     public double Width { get; set; }
-
     public double Height { get; set; }
-
     public double Baseline { get; set; }
 
     public List<Stroke> Strokes { get; set; } = [];

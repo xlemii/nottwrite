@@ -17,12 +17,31 @@ public partial class MainWindow : Window
 
     private readonly List<List<Point>> _strokes = [];
     private List<Point>? _currentStroke;
+    private readonly Stack<List<Point>> _redoStack = [];
 
-    private const string SaveFolder = @"C:\Users\matys\Desktop\projects\nottwrite\templates\Default";
+    private string CurrentTemplate = "Default";
+
+    private string GetTemplateFolder()
+    {
+        string folder =
+            System.IO.Path.Combine(
+                @"C:\Users\matys\Desktop\projects\nottwrite\templates",
+                CurrentTemplate);
+
+        Directory.CreateDirectory(folder);
+
+        return folder;
+    }
 
     public MainWindow()
     {
         InitializeComponent();
+        TemplateComboBox.Items.Add("Default");
+        TemplateComboBox.Items.Add("School");
+        TemplateComboBox.Items.Add("Fancy");
+        TemplateComboBox.Items.Add("Messy");
+
+        TemplateComboBox.SelectedIndex = 0;
 
         Loaded += (_, _) =>
         {
@@ -49,15 +68,18 @@ public partial class MainWindow : Window
 
     private string GetSelectedFilePath()
     {
-        string letter = LetterComboBox.SelectedItem?.ToString() ?? "A";
+        string letter =
+            LetterComboBox.SelectedItem?.ToString()
+            ?? "A";
 
         return System.IO.Path.Combine(
-            SaveFolder,
+            GetTemplateFolder(),
             $"{letter}.json");
     }
 
     private void DrawingCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        _redoStack.Clear();
         _isDrawing = true;
 
         _currentLine = new Polyline
@@ -100,7 +122,11 @@ public partial class MainWindow : Window
     private void ClearButton_Click(object sender, RoutedEventArgs e)
     {
         DrawingCanvas.Children.Clear();
+
+        DrawNotebookLines();
+
         _strokes.Clear();
+        _redoStack.Clear();
     }
 
     private List<Point> SmoothStroke(List<Point> points)
@@ -188,7 +214,7 @@ public partial class MainWindow : Window
                 WriteIndented = true
             });
 
-        Directory.CreateDirectory(SaveFolder);
+        Directory.CreateDirectory(GetTemplateFolder());
 
         string filePath = GetSelectedFilePath();
 
@@ -263,7 +289,7 @@ public partial class MainWindow : Window
         foreach (char c in characters)
         {
             string filePath = System.IO.Path.Combine(
-                SaveFolder,
+                GetTemplateFolder(),
                 $"{c}.json");
 
             if (!File.Exists(filePath))
@@ -400,7 +426,7 @@ public partial class MainWindow : Window
         foreach (char character in text)
         {
             string filePath = System.IO.Path.Combine(
-                SaveFolder,
+                GetTemplateFolder(),
                 $"{character}.json");
 
             if (!File.Exists(filePath))
@@ -445,5 +471,63 @@ public partial class MainWindow : Window
 
             offsetX += (letter.Width * scale) + 20;
         }
+    }
+
+    private void TemplateComboBox_SelectionChanged(
+    object sender,
+    System.Windows.Controls.SelectionChangedEventArgs e)
+    {
+        CurrentTemplate =
+            TemplateComboBox.SelectedItem?.ToString()
+            ?? "Default";
+    }
+
+    private void RedrawCurrentStrokes()
+    {
+        DrawingCanvas.Children.Clear();
+
+        DrawNotebookLines();
+
+        foreach (var stroke in _strokes)
+        {
+            var line = new Polyline
+            {
+                Stroke = Brushes.Black,
+                StrokeThickness = 3
+            };
+
+            foreach (var point in stroke)
+            {
+                line.Points.Add(point);
+            }
+
+            DrawingCanvas.Children.Add(line);
+        }
+    }
+
+    private void UndoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_strokes.Count == 0)
+            return;
+
+        var lastStroke = _strokes[^1];
+
+        _strokes.RemoveAt(_strokes.Count - 1);
+
+        _redoStack.Push(lastStroke);
+
+        RedrawCurrentStrokes();
+    }
+
+    private void RedoButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (_redoStack.Count == 0)
+            return;
+
+        var stroke = _redoStack.Pop();
+
+        _strokes.Add(stroke);
+
+        RedrawCurrentStrokes();
     }
 }

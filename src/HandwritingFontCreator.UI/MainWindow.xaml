@@ -3,23 +3,47 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="Handwriting Font Creator"
         Height="700"
-        Width="1200">
+        Width="1400">
 
     <Grid>
+
+        <ComboBox Name="TemplateComboBox"
+                  Width="140"
+                  Height="35"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Top"
+                  Margin="10,10,0,0"
+                  SelectionChanged="TemplateComboBox_SelectionChanged"/>
 
         <ComboBox Name="LetterComboBox"
                   Width="80"
                   Height="35"
                   HorizontalAlignment="Left"
                   VerticalAlignment="Top"
-                  Margin="10,10,0,0"/>
+                  Margin="160,10,0,0"/>
+
+        <Button Content="Undo"
+                Width="80"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="250,10,0,0"
+                Click="UndoButton_Click"/>
+
+        <Button Content="Redo"
+                Width="80"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="340,10,0,0"
+                Click="RedoButton_Click"/>
 
         <Button Content="Clear"
                 Width="100"
                 Height="35"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
-                Margin="100,10,0,0"
+                Margin="430,10,0,0"
                 Click="ClearButton_Click"/>
 
         <Button Content="Save Letter"
@@ -27,7 +51,7 @@
                 Height="35"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
-                Margin="210,10,0,0"
+                Margin="540,10,0,0"
                 Click="SaveButton_Click"/>
 
         <Button Content="Load Letter"
@@ -35,7 +59,7 @@
                 Height="35"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
-                Margin="340,10,0,0"
+                Margin="670,10,0,0"
                 Click="LoadButton_Click"/>
 
         <TextBox Name="GenerateTextBox"
@@ -43,7 +67,7 @@
                  Height="35"
                  HorizontalAlignment="Left"
                  VerticalAlignment="Top"
-                 Margin="470,10,0,0"
+                 Margin="800,10,0,0"
                  Text="ABC"/>
 
         <Button Content="Generate"
@@ -51,7 +75,7 @@
                 Height="35"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
-                Margin="680,10,0,0"
+                Margin="1010,10,0,0"
                 Click="GenerateButton_Click"/>
 
         <Button Content="Preview Alphabet"
@@ -59,16 +83,8 @@
                 Height="35"
                 HorizontalAlignment="Left"
                 VerticalAlignment="Top"
-                Margin="810,10,0,0"
+                Margin="1140,10,0,0"
                 Click="PreviewAlphabetButton_Click"/>
-
-        <Button Content="Export PNG"
-                Width="140"
-                Height="35"
-                HorizontalAlignment="Left"
-                VerticalAlignment="Top"
-                Margin="960,10,0,0"
-                Click="ExportPngButton_Click"/>
 
         <Canvas Name="DrawingCanvas"
                 Margin="0,60,0,0"

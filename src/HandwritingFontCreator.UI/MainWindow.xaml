@@ -1,12 +1,82 @@
 ﻿<Window x:Class="HandwritingFontCreator.UI.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:HandwritingFontCreator.UI"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
+        Title="Handwriting Font Creator"
+        Height="700"
+        Width="1200">
+
     <Grid>
 
+        <ComboBox Name="LetterComboBox"
+                  Width="80"
+                  Height="35"
+                  HorizontalAlignment="Left"
+                  VerticalAlignment="Top"
+                  Margin="10,10,0,0"/>
+
+        <Button Content="Clear"
+                Width="100"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="100,10,0,0"
+                Click="ClearButton_Click"/>
+
+        <Button Content="Save Letter"
+                Width="120"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="210,10,0,0"
+                Click="SaveButton_Click"/>
+
+        <Button Content="Load Letter"
+                Width="120"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="340,10,0,0"
+                Click="LoadButton_Click"/>
+
+        <TextBox Name="GenerateTextBox"
+                 Width="200"
+                 Height="35"
+                 HorizontalAlignment="Left"
+                 VerticalAlignment="Top"
+                 Margin="470,10,0,0"
+                 Text="ABC"/>
+
+        <Button Content="Generate"
+                Width="120"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="680,10,0,0"
+                Click="GenerateButton_Click"/>
+
+        <Button Content="Preview Alphabet"
+                Width="140"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="810,10,0,0"
+                Click="PreviewAlphabetButton_Click"/>
+
+        <Button Content="Export PNG"
+                Width="140"
+                Height="35"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Top"
+                Margin="960,10,0,0"
+                Click="ExportPngButton_Click"/>
+
+        <Canvas Name="DrawingCanvas"
+                Margin="0,60,0,0"
+                Background="White"
+                MouseLeftButtonDown="DrawingCanvas_MouseLeftButtonDown"
+                MouseMove="DrawingCanvas_MouseMove"
+                MouseLeftButtonUp="DrawingCanvas_MouseLeftButtonUp"/>
+
     </Grid>
+
 </Window>

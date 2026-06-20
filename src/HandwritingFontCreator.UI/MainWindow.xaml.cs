@@ -22,6 +22,7 @@ public partial class MainWindow : Window
 
     private string CurrentTemplate = "Default";
     private string CurrentCharacter = "A";
+    private bool _hasUnsavedChanges;
 
     private string GetTemplateFolder()
     {
@@ -52,9 +53,50 @@ public partial class MainWindow : Window
 
         CreateCharacterGrid();
     }
+    private bool CharacterExists(string character)
+    {
+        string filePath = System.IO.Path.Combine(
+        GetTemplateFolder(),
+        $"{character}.json");
+
+        return File.Exists(filePath);
+    }
+
+    private void UpdateProgress()
+    {
+        string chars =
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
+            "abcdefghijklmnopqrstuvwxyz" +
+            "0123456789";
+
+        int total = chars.Length;
+        int completed = 0;
+
+        foreach (char c in chars)
+        {
+            string filePath = System.IO.Path.Combine(
+                GetTemplateFolder(),
+                $"{c}.json");
+
+            if (File.Exists(filePath))
+            {
+                completed++;
+            }
+        }
+
+        double percent =
+            (double)completed / total * 100;
+
+        AlphabetProgressBar.Value = percent;
+
+        AlphabetProgressText.Text =
+            $"{completed}/{total} ({percent:0}%)";
+    }
 
     private void CreateCharacterGrid()
     {
+        CharacterGrid.Children.Clear();
+
         string chars =
             "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
             "abcdefghijklmnopqrstuvwxyz" +
@@ -62,16 +104,31 @@ public partial class MainWindow : Window
 
         foreach (char c in chars)
         {
+            bool exists = CharacterExists(c.ToString());
+
             var button = new Button
             {
                 Content = c.ToString(),
                 Margin = new Thickness(2),
-                Height = 35
+                Height = 35,
+                FontWeight = FontWeights.Bold,
+                Tag = c.ToString()
             };
 
+            if (exists)
+            {
+                button.Background = Brushes.LightGreen;
+            }
+            else
+            {
+                button.Background = Brushes.IndianRed;
+            }
+
             button.Click += CharacterButton_Click;
+
             CharacterGrid.Children.Add(button);
         }
+        UpdateProgress();
     }
 
     private void CharacterButton_Click(object sender, RoutedEventArgs e)
@@ -79,8 +136,14 @@ public partial class MainWindow : Window
         if (sender is not Button button)
             return;
 
+        if (_hasUnsavedChanges)
+        {
+            SaveCurrentCharacterSilently();
+        }
+
         CurrentCharacter =
-            button.Content?.ToString() ?? "A";
+            button.Tag?.ToString()
+            ?? "A";
 
         LoadCurrentCharacter();
     }
@@ -131,6 +194,7 @@ public partial class MainWindow : Window
 
             DrawingCanvas.Children.Add(line);
         }
+        _hasUnsavedChanges = false;
     }
 
     private string GetSelectedFilePath()
@@ -140,9 +204,72 @@ public partial class MainWindow : Window
             $"{CurrentCharacter}.json");
     }
 
+    private void SaveCurrentCharacterSilently()
+    {
+        if (_strokes.Count == 0)
+            return;
+
+        double minX = double.MaxValue;
+        double minY = double.MaxValue;
+
+        double maxX = double.MinValue;
+        double maxY = double.MinValue;
+
+        foreach (var stroke in _strokes)
+        {
+            foreach (var point in stroke)
+            {
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+            }
+        }
+
+        var letter = new StrokeData
+        {
+            Width = (maxX - minX) + 20,
+            Height = (maxY - minY) + 20,
+            Baseline = maxY - minY
+        };
+
+        foreach (var originalStroke in _strokes)
+        {
+            var strokePoints = SmoothStroke(originalStroke);
+
+            var stroke = new Stroke();
+
+            foreach (var point in strokePoints)
+            {
+                stroke.Points.Add(new PointData
+                {
+                    X = point.X - minX,
+                    Y = point.Y - minY
+                });
+            }
+
+            letter.Strokes.Add(stroke);
+        }
+
+        string json = JsonSerializer.Serialize(
+            letter,
+            new JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+
+        File.WriteAllText(
+            GetSelectedFilePath(),
+            json);
+
+        _hasUnsavedChanges = false;
+    }
+
     private void DrawingCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _redoStack.Clear();
+        _hasUnsavedChanges = true;
         _isDrawing = true;
 
         _currentLine = new Polyline
@@ -284,6 +411,8 @@ public partial class MainWindow : Window
         File.WriteAllText(filePath, json);
 
         MessageBox.Show($"Zapisano {System.IO.Path.GetFileName(filePath)}");
+        CreateCharacterGrid();
+        _hasUnsavedChanges = false;
     }
 
     private void LoadButton_Click(object sender, RoutedEventArgs e)
@@ -538,11 +667,13 @@ public partial class MainWindow : Window
 
     private void TemplateComboBox_SelectionChanged(
     object sender,
-    System.Windows.Controls.SelectionChangedEventArgs e)
+    SelectionChangedEventArgs e)
     {
         CurrentTemplate =
             TemplateComboBox.SelectedItem?.ToString()
             ?? "Default";
+
+        CreateCharacterGrid();
     }
 
     private void RedrawCurrentStrokes()

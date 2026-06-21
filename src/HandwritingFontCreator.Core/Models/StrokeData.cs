@@ -5,6 +5,7 @@ public class StrokeData
     public double Width { get; set; }
     public double Height { get; set; }
     public double Baseline { get; set; }
+    public string? Color { get; set; }   // hex e.g. "#E8E8E8"; null = use editor default
 
     public List<Stroke> Strokes { get; set; } = [];
 }

@@ -1,4 +1,8 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="SkiaSharp.Views.WPF" Version="2.88.9" />
+  </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\HandwritingFontCreator.Core\HandwritingFontCreator.Core.csproj" />
@@ -13,5 +17,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Resource Include="Fonts\geist-font\Geist\ttf\Geist-Regular.ttf" />
+    <Resource Include="Fonts\geist-font\Geist\ttf\Geist-Medium.ttf" />
+    <Resource Include="Fonts\geist-font\Geist\ttf\Geist-SemiBold.ttf" />
+    <Resource Include="Fonts\geist-font\Geist\ttf\Geist-Bold.ttf" />
+    <Resource Include="Fonts\geist-font\Geist\ttf\Geist-Light.ttf" />
+    <Resource Include="icon.png" />
+  </ItemGroup>
 
 </Project>

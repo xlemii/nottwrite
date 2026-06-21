@@ -2,8 +2,6 @@
 
 A desktop application for creating handwriting-style fonts from your own handwriting. Draw each letter of the alphabet, then type text that renders in your custom font — complete with natural variations, paper styles, and voice input.
 
-![nottwrite screenshot](docs/screenshot.png)
-
 ---
 
 ## Features

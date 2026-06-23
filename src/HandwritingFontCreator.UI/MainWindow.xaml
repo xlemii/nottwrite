@@ -1,4 +1,4 @@
-<Window x:Class="HandwritingFontCreator.UI.MainWindow"
+﻿<Window x:Class="HandwritingFontCreator.UI.MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:skia="clr-namespace:SkiaSharp.Views.WPF;assembly=SkiaSharp.Views.WPF"
@@ -9,7 +9,7 @@
         Background="#1E1E1E"
         Icon="pack://application:,,,/icon.png"
         FontFamily="pack://application:,,,/Fonts/geist-font/Geist/ttf/#Geist"
-        PreviewKeyDown="Window_PreviewKeyDown">
+        PreviewKeyDown="Window_PreviewKeyDown" WindowState="Maximized">
 
     <!-- WindowChrome: frameless + resize support -->
     <shell:WindowChrome.WindowChrome>
@@ -56,6 +56,75 @@
         <SolidColorBrush x:Key="LoadedStrokeBrush" Color="#888888"/>
         <SolidColorBrush x:Key="NotebookLineBrush" Color="#2E2E44"/>
 
+        <!-- Context Menu styles -->
+        <Style TargetType="ContextMenu">
+            <Setter Property="Background"      Value="#252525"/>
+            <Setter Property="BorderBrush"     Value="#3A3A3A"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding"         Value="0,5"/>
+            <Setter Property="MinWidth"        Value="170"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ContextMenu">
+                        <Border Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="10"
+                                Padding="{TemplateBinding Padding}"
+                                SnapsToDevicePixels="True">
+                            <Border.Effect>
+                                <DropShadowEffect Color="#000000" Opacity="0.55"
+                                                  BlurRadius="18" ShadowDepth="4" Direction="270"/>
+                            </Border.Effect>
+                            <StackPanel IsItemsHost="True"/>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="MenuItem">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="Foreground" Value="#E8E8E8"/>
+            <Setter Property="FontSize"   Value="12.5"/>
+            <Setter Property="Padding"    Value="14,8"/>
+            <Setter Property="Cursor"     Value="Hand"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="MenuItem">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                CornerRadius="6" Margin="5,1">
+                            <ContentPresenter ContentSource="Header"
+                                              Margin="{TemplateBinding Padding}"
+                                              VerticalAlignment="Center"
+                                              RecognizesAccessKey="True"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsHighlighted" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="#3A3260"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style TargetType="Separator">
+            <Setter Property="Height"     Value="1"/>
+            <Setter Property="Margin"     Value="10,4"/>
+            <Setter Property="Background" Value="#3A3A3A"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Separator">
+                        <Border Height="{TemplateBinding Height}"
+                                Margin="{TemplateBinding Margin}"
+                                Background="{TemplateBinding Background}"
+                                SnapsToDevicePixels="True"/>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
         <!-- ═══ SECTION LABEL ═══════════════════════════════════ -->
         <Style x:Key="SectionLabel" TargetType="TextBlock">
             <Setter Property="FontSize"   Value="10"/>
@@ -81,17 +150,19 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="6" Padding="{TemplateBinding Padding}"
+                                CornerRadius="6"
                                 RenderTransformOrigin="0.5,0.5">
                             <Border.RenderTransform>
                                 <ScaleTransform x:Name="BdScale"/>
                             </Border.RenderTransform>
                             <Grid>
+                                <!-- HoverLayer fills entire button (not clipped by padding) -->
                                 <Border x:Name="HoverLayer" CornerRadius="5"
                                         Background="White" Opacity="0"
                                         IsHitTestVisible="False"/>
                                 <ContentPresenter HorizontalAlignment="Center"
                                                   VerticalAlignment="Center"
+                                                  Margin="{TemplateBinding Padding}"
                                                   TextElement.Foreground="{TemplateBinding Foreground}"/>
                             </Grid>
                         </Border>
@@ -224,25 +295,35 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}">
+                        <Grid Background="Transparent">
+                            <Border x:Name="Overlay" Background="White" Opacity="0" CornerRadius="0"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <EventTrigger RoutedEvent="MouseEnter">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Bd"
-                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="#3A3A3A" Duration="0:0:0.1"/>
+                                        <DoubleAnimation Storyboard.TargetName="Overlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="0.08" Duration="0:0:0.1"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </EventTrigger>
                             <EventTrigger RoutedEvent="MouseLeave">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Bd"
-                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="Transparent" Duration="0:0:0.15"/>
+                                        <DoubleAnimation Storyboard.TargetName="Overlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="0" Duration="0:0:0.18"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="Overlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="0.15" Duration="0:0:0.05"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </EventTrigger>
@@ -257,25 +338,41 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Button">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="0,8,0,0">
+                        <Grid Background="Transparent">
+                            <Border x:Name="RedOverlay" Background="#C42B1C"
+                                    Opacity="0" CornerRadius="0,8,0,0"/>
+                            <Border x:Name="WhiteOverlay" Background="White"
+                                    Opacity="0" CornerRadius="0,8,0,0"/>
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
-                        </Border>
+                        </Grid>
                         <ControlTemplate.Triggers>
                             <EventTrigger RoutedEvent="MouseEnter">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Bd"
-                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="#C42B1C" Duration="0:0:0.1"/>
+                                        <DoubleAnimation Storyboard.TargetName="RedOverlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="1" Duration="0:0:0.1"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </EventTrigger>
                             <EventTrigger RoutedEvent="MouseLeave">
                                 <BeginStoryboard>
                                     <Storyboard>
-                                        <ColorAnimation Storyboard.TargetName="Bd"
-                                            Storyboard.TargetProperty="(Border.Background).(SolidColorBrush.Color)"
-                                            To="Transparent" Duration="0:0:0.15"/>
+                                        <DoubleAnimation Storyboard.TargetName="RedOverlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="0" Duration="0:0:0.18"/>
+                                        <DoubleAnimation Storyboard.TargetName="WhiteOverlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="0" Duration="0:0:0.1"/>
+                                    </Storyboard>
+                                </BeginStoryboard>
+                            </EventTrigger>
+                            <EventTrigger RoutedEvent="PreviewMouseLeftButtonDown">
+                                <BeginStoryboard>
+                                    <Storyboard>
+                                        <DoubleAnimation Storyboard.TargetName="WhiteOverlay"
+                                            Storyboard.TargetProperty="Opacity"
+                                            To="0.2" Duration="0:0:0.05"/>
                                     </Storyboard>
                                 </BeginStoryboard>
                             </EventTrigger>
@@ -325,14 +422,8 @@
                         <Border Background="#333333" CornerRadius="2" ClipToBounds="True">
                             <Border x:Name="PART_Track">
                                 <Border x:Name="PART_Indicator" CornerRadius="2"
-                                        HorizontalAlignment="Left">
-                                    <Border.Background>
-                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                            <GradientStop Color="#8B7DC4" Offset="0"/>
-                                            <GradientStop Color="#A898D8" Offset="1"/>
-                                        </LinearGradientBrush>
-                                    </Border.Background>
-                                </Border>
+                                        HorizontalAlignment="Left"
+                                        Background="{DynamicResource AccentBrush}"/>
                             </Border>
                         </Border>
                     </ControlTemplate>
@@ -345,98 +436,7 @@
             <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
         </Style>
 
-        <!-- ═══ COMBOBOX ════════════════════════════════════════ -->
-        <Style TargetType="ComboBox">
-            <Setter Property="Background"      Value="{DynamicResource CardBg}"/>
-            <Setter Property="Foreground"      Value="{DynamicResource PrimaryText}"/>
-            <Setter Property="BorderBrush"     Value="{DynamicResource AppBorderBrush}"/>
-            <Setter Property="BorderThickness" Value="1"/>
-            <Setter Property="Cursor"          Value="Hand"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBox">
-                        <Grid>
-                            <ToggleButton x:Name="DropDownToggle" Focusable="False"
-                                          IsChecked="{Binding Path=IsDropDownOpen, Mode=TwoWay,
-                                              RelativeSource={RelativeSource TemplatedParent}}"
-                                          Background="{TemplateBinding Background}"
-                                          BorderBrush="{TemplateBinding BorderBrush}"
-                                          BorderThickness="{TemplateBinding BorderThickness}"
-                                          Cursor="Hand">
-                                <ToggleButton.Template>
-                                    <ControlTemplate TargetType="ToggleButton">
-                                        <Border x:Name="TBd" Background="{TemplateBinding Background}"
-                                                BorderBrush="{TemplateBinding BorderBrush}"
-                                                BorderThickness="{TemplateBinding BorderThickness}"
-                                                CornerRadius="6">
-                                            <TextBlock Text="&#x25BE;" FontSize="9"
-                                                       Foreground="{DynamicResource SecondaryText}"
-                                                       HorizontalAlignment="Right"
-                                                       VerticalAlignment="Center" Margin="0,0,8,0"/>
-                                        </Border>
-                                        <ControlTemplate.Triggers>
-                                            <Trigger Property="IsMouseOver" Value="True">
-                                                <Setter TargetName="TBd" Property="BorderBrush"
-                                                        Value="{DynamicResource AccentBrush}"/>
-                                            </Trigger>
-                                        </ControlTemplate.Triggers>
-                                    </ControlTemplate>
-                                </ToggleButton.Template>
-                            </ToggleButton>
-                            <ContentPresenter IsHitTestVisible="False"
-                                              Content="{TemplateBinding SelectionBoxItem}"
-                                              ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
-                                              Margin="10,0,26,0" VerticalAlignment="Center"
-                                              TextElement.Foreground="{TemplateBinding Foreground}"
-                                              TextElement.FontSize="11"/>
-                            <Popup x:Name="PART_Popup" IsOpen="{TemplateBinding IsDropDownOpen}"
-                                   AllowsTransparency="True" Placement="Bottom" StaysOpen="False">
-                                <Border Background="{DynamicResource CardBg}"
-                                        BorderBrush="{DynamicResource AccentBrush}"
-                                        BorderThickness="1" CornerRadius="8" Padding="4"
-                                        MinWidth="{Binding ActualWidth,
-                                            RelativeSource={RelativeSource AncestorType=ComboBox}}">
-                                    <Border.Effect>
-                                        <DropShadowEffect Color="#000" BlurRadius="24"
-                                                          ShadowDepth="6" Opacity="0.5"/>
-                                    </Border.Effect>
-                                    <ScrollViewer MaxHeight="200">
-                                        <ItemsPresenter/>
-                                    </ScrollViewer>
-                                </Border>
-                            </Popup>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- ═══ COMBOBOXITEM ════════════════════════════════════ -->
-        <Style TargetType="ComboBoxItem">
-            <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Padding"    Value="10,6"/>
-            <Setter Property="FontSize"   Value="11"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ComboBoxItem">
-                        <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                                Padding="{TemplateBinding Padding}" CornerRadius="5">
-                            <ContentPresenter TextElement.Foreground="{TemplateBinding Foreground}"/>
-                        </Border>
-                        <ControlTemplate.Triggers>
-                            <Trigger Property="IsMouseOver" Value="True">
-                                <Setter TargetName="Bd" Property="Background" Value="#3A3A3A"/>
-                            </Trigger>
-                            <Trigger Property="IsSelected" Value="True">
-                                <Setter TargetName="Bd" Property="Background"
-                                        Value="{DynamicResource NavActiveBg}"/>
-                            </Trigger>
-                        </ControlTemplate.Triggers>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
+        <!-- COMBOBOX / COMBOBOXITEM / SCROLLBAR live in App.xaml (shared) -->
 
         <!-- ═══ SLIDER ══════════════════════════════════════════ -->
         <Style TargetType="Slider">
@@ -453,14 +453,8 @@
                                     <RepeatButton Command="Slider.DecreaseLarge">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
-                                                <Border Height="3" CornerRadius="1.5">
-                                                    <Border.Background>
-                                                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                                                            <GradientStop Color="#9B59FC" Offset="0"/>
-                                                            <GradientStop Color="#AE7BFD" Offset="1"/>
-                                                        </LinearGradientBrush>
-                                                    </Border.Background>
-                                                </Border>
+                                                <Border Height="3" CornerRadius="1.5"
+                                                        Background="{DynamicResource AccentBrush}"/>
                                             </ControlTemplate>
                                         </RepeatButton.Template>
                                     </RepeatButton>
@@ -469,7 +463,8 @@
                                     <RepeatButton Command="Slider.IncreaseLarge">
                                         <RepeatButton.Template>
                                             <ControlTemplate TargetType="RepeatButton">
-                                                <Border Height="3" Background="#3A3A3A" CornerRadius="1.5"/>
+                                                <Border Height="3" CornerRadius="1.5"
+                                                        Background="{DynamicResource AppBorderBrush}"/>
                                             </ControlTemplate>
                                         </RepeatButton.Template>
                                     </RepeatButton>
@@ -487,32 +482,6 @@
                                                             Opacity="0.5"/>
                                                     </Ellipse.Effect>
                                                 </Ellipse>
-                                            </ControlTemplate>
-                                        </Thumb.Template>
-                                    </Thumb>
-                                </Track.Thumb>
-                            </Track>
-                        </Grid>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
-
-        <!-- ═══ SCROLLBAR ═══════════════════════════════════════ -->
-        <Style TargetType="ScrollBar">
-            <Setter Property="Width"      Value="4"/>
-            <Setter Property="Background" Value="Transparent"/>
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ScrollBar">
-                        <Grid>
-                            <Track x:Name="PART_Track" IsDirectionReversed="True">
-                                <Track.Thumb>
-                                    <Thumb>
-                                        <Thumb.Template>
-                                            <ControlTemplate TargetType="Thumb">
-                                                <Border Background="#4A4A4A" CornerRadius="2"
-                                                        Margin="1,0"/>
                                             </ControlTemplate>
                                         </Thumb.Template>
                                     </Thumb>
@@ -568,76 +537,6 @@
                 <TextBlock Text="nottwrite" FontSize="13" FontWeight="SemiBold"
                            Foreground="{DynamicResource PrimaryText}"
                            VerticalAlignment="Center" Margin="0,0,20,0"/>
-
-                <!-- Divider -->
-                <Rectangle Width="1" Height="22" Fill="{DynamicResource AppBorderBrush}"
-                           Margin="0,0,16,0"/>
-
-                <!-- Template section -->
-                <TextBlock Text="Template" FontSize="10"
-                           Foreground="{DynamicResource SecondaryText}"
-                           VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <ComboBox Name="TemplateComboBox" Width="120" Height="30"
-                          SelectionChanged="TemplateComboBox_SelectionChanged"
-                          shell:WindowChrome.IsHitTestVisibleInChrome="True"/>
-                <Button Width="30" Height="30" Margin="5,0,0,0" Padding="0"
-                        ToolTip="New template" Click="NewTemplate_Click"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <TextBlock Text="+" FontSize="18" FontWeight="Light"
-                               Foreground="{DynamicResource AccentBrush}"
-                               VerticalAlignment="Center" HorizontalAlignment="Center"
-                               Margin="0,-2,0,0"/>
-                </Button>
-                <Button Name="SetDefaultTemplateBtn" Width="30" Height="30" Margin="3,0,0,0"
-                        Padding="0" ToolTip="Set as default"
-                        Click="SetDefaultTemplate_Click"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <TextBlock Name="DefaultStarLabel" Text="&#x2606;" FontSize="14"
-                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                </Button>
-                <Button Width="30" Height="30" Margin="3,0,0,0" Padding="0"
-                        ToolTip="Delete template" Click="DeleteTemplate_Click"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <TextBlock Text="&#x2715;" FontSize="12" FontWeight="Bold"
-                               Foreground="{DynamicResource DangerBrush}"
-                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
-                </Button>
-
-                <!-- Divider -->
-                <Rectangle Width="1" Height="22" Fill="{DynamicResource AppBorderBrush}"
-                           Margin="14,0,14,0"/>
-
-                <!-- Export / Import / SVG -->
-                <Button Height="30" Padding="10,0" Margin="0,0,4,0"
-                        Click="ExportTemplate_Click" ToolTip="Export template (.nwt)"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#x2191;" FontSize="13" FontWeight="Bold"
-                                   Foreground="{DynamicResource AccentBrush}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <TextBlock Text="Export" FontSize="11" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button Height="30" Padding="10,0" Margin="0,0,4,0"
-                        Click="ImportTemplate_Click" ToolTip="Import template (.nwt)"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#x2193;" FontSize="13" FontWeight="Bold"
-                                   Foreground="{DynamicResource AccentBrush}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <TextBlock Text="Import" FontSize="11" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
-                <Button Height="30" Padding="10,0"
-                        Click="ExportSvgButton_Click" ToolTip="Export as SVG"
-                        shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="&#x2B21;" FontSize="11" FontWeight="Bold"
-                                   Foreground="{DynamicResource AccentBrush}"
-                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
-                        <TextBlock Text="SVG" FontSize="11" VerticalAlignment="Center"/>
-                    </StackPanel>
-                </Button>
             </StackPanel>
 
             <!-- Right: Save As + Chrome buttons -->
@@ -646,20 +545,24 @@
                 <!-- Save As -->
                 <Grid Margin="0,0,10,0"
                       shell:WindowChrome.IsHitTestVisibleInChrome="True">
-                    <Button Name="ExportMenuBtn" Height="30" Padding="14,0"
-                            BorderThickness="0" Click="ExportMenuBtn_Click">
-                        <Button.Background>
-                            <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
-                                <GradientStop Color="#8B7DC4" Offset="0"/>
-                                <GradientStop Color="#6A5FA8" Offset="1"/>
-                            </LinearGradientBrush>
-                        </Button.Background>
+                    <Button Name="ExportMenuBtn" Height="30" Padding="13,0"
+                            BorderThickness="0" Click="ExportMenuBtn_Click"
+                            Background="{DynamicResource AccentBrush}"
+                            BorderBrush="{DynamicResource AccentBrush}"
+                            Foreground="White"><!-- primary action: solid accent, theme-aware -->
+                        <Button.Effect>
+                            <DropShadowEffect Color="#8B7DC4" Opacity="0.45"
+                                              BlurRadius="10" ShadowDepth="0"/>
+                        </Button.Effect>
                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="&#x2913;" FontSize="12" FontWeight="Bold"
+                                       Foreground="White" VerticalAlignment="Center"
+                                       Margin="0,0,6,0"/>
                             <TextBlock Text="Save As" FontSize="11" FontWeight="SemiBold"
                                        Foreground="White" VerticalAlignment="Center"
                                        Margin="0,0,5,0"/>
-                            <TextBlock Text="&#x25BE;" FontSize="10" Foreground="White"
-                                       VerticalAlignment="Center"/>
+                            <TextBlock Text="&#x25BE;" FontSize="9" Foreground="White"
+                                       Opacity="0.85" VerticalAlignment="Center"/>
                         </StackPanel>
                     </Button>
                     <Popup Name="ExportPopup"
@@ -669,54 +572,68 @@
                         <Border Background="{DynamicResource CardBg}"
                                 BorderBrush="{DynamicResource AppBorderBrush}"
                                 BorderThickness="1" CornerRadius="10"
-                                Padding="6" MinWidth="160">
+                                Padding="6" MinWidth="184">
                             <Border.Effect>
                                 <DropShadowEffect Color="#000" BlurRadius="28"
                                                   ShadowDepth="6" Opacity="0.6"/>
                             </Border.Effect>
                             <StackPanel>
-                                <Button Height="36" Padding="10,0" Margin="0,0,0,3"
-                                        HorizontalContentAlignment="Left"
+                                <TextBlock Text="EXPORT PAGE AS" FontSize="9" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource SecondaryText}"
+                                           Margin="10,6,10,6"/>
+                                <Button Style="{StaticResource PopupItemBtn}"
                                         Click="ExportPngButton_Click">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="22" Height="22" CornerRadius="4"
-                                                Background="#1E3A5F" Margin="0,0,9,0">
-                                            <TextBlock Text="P" FontSize="10" FontWeight="Bold"
+                                        <Border Width="24" Height="24" CornerRadius="5"
+                                                Background="#1E3A5F" Margin="0,0,10,0">
+                                            <TextBlock Text="P" FontSize="11" FontWeight="Bold"
                                                        Foreground="#60A5FA"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="PNG" FontSize="12"
-                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="PNG image" FontSize="12.5"
+                                                   VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button Height="36" Padding="10,0" Margin="0,0,0,3"
-                                        HorizontalContentAlignment="Left"
+                                <Button Style="{StaticResource PopupItemBtn}"
                                         Click="ExportJpgButton_Click">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="22" Height="22" CornerRadius="4"
-                                                Background="#3B1F1F" Margin="0,0,9,0">
-                                            <TextBlock Text="J" FontSize="10" FontWeight="Bold"
+                                        <Border Width="24" Height="24" CornerRadius="5"
+                                                Background="#3B1F1F" Margin="0,0,10,0">
+                                            <TextBlock Text="J" FontSize="11" FontWeight="Bold"
                                                        Foreground="#F87171"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="JPG" FontSize="12"
-                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="JPG image" FontSize="12.5"
+                                                   VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
-                                <Button Height="36" Padding="10,0"
-                                        HorizontalContentAlignment="Left"
+                                <Button Style="{StaticResource PopupItemBtn}"
                                         Click="ExportPdfButton_Click">
                                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                        <Border Width="22" Height="22" CornerRadius="4"
-                                                Background="#3B2020" Margin="0,0,9,0">
-                                            <TextBlock Text="&#x1F4C4;" FontSize="11"
+                                        <Border Width="24" Height="24" CornerRadius="5"
+                                                Background="#3B2020" Margin="0,0,10,0">
+                                            <TextBlock Text="&#x1F4C4;" FontSize="12"
                                                        HorizontalAlignment="Center"
                                                        VerticalAlignment="Center"/>
                                         </Border>
-                                        <TextBlock Text="PDF" FontSize="12"
-                                                   FontWeight="SemiBold" VerticalAlignment="Center"/>
+                                        <TextBlock Text="PDF document" FontSize="12.5"
+                                                   VerticalAlignment="Center"/>
+                                    </StackPanel>
+                                </Button>
+                                <Button Style="{StaticResource PopupItemBtn}"
+                                        Click="ExportSvgButton_Click">
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Width="24" Height="24" CornerRadius="5"
+                                                Background="#1F3B2A" Margin="0,0,10,0">
+                                            <TextBlock Text="&#x2B21;" FontSize="12"
+                                                       Foreground="#5BD08A"
+                                                       HorizontalAlignment="Center"
+                                                       VerticalAlignment="Center"/>
+                                        </Border>
+                                        <TextBlock Text="SVG vector" FontSize="12.5"
+                                                   VerticalAlignment="Center"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>
@@ -783,16 +700,16 @@
                         BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="0,0,0,1" Padding="0,6,0,6">
                     <StackPanel>
-                        <Button Name="EditModeBtn"
+                        <Button Name="NotesModeBtn"
                                 Style="{StaticResource NavBtn}"
-                                Click="EditModeBtn_Click"
+                                Click="NotesModeBtn_Click"
                                 shell:WindowChrome.IsHitTestVisibleInChrome="True">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="&#x270F;" FontSize="15" Margin="0,0,12,0"
+                                <TextBlock Text="&#x1F4D3;" FontSize="14" Margin="0,0,12,0"
                                            VerticalAlignment="Center"/>
                                 <StackPanel VerticalAlignment="Center">
-                                    <TextBlock Text="Edit" FontSize="13" FontWeight="SemiBold"/>
-                                    <TextBlock Text="draw characters" FontSize="9"
+                                    <TextBlock Text="Notes" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Text="personal library" FontSize="9"
                                                Foreground="{DynamicResource SecondaryText}"/>
                                 </StackPanel>
                             </StackPanel>
@@ -811,11 +728,61 @@
                                 </StackPanel>
                             </StackPanel>
                         </Button>
+                        <Button Name="EditModeBtn"
+                                Style="{StaticResource NavBtn}"
+                                Click="EditModeBtn_Click"
+                                shell:WindowChrome.IsHitTestVisibleInChrome="True">
+                            <DockPanel VerticalAlignment="Center">
+                                <TextBlock Text="&#x270F;" FontSize="15" Margin="0,0,12,0"
+                                           DockPanel.Dock="Left" VerticalAlignment="Center"/>
+                                <Border Name="EditCountBadge" DockPanel.Dock="Right"
+                                        VerticalAlignment="Center" Margin="6,0,2,0"
+                                        CornerRadius="9" Padding="7,2"
+                                        Background="{DynamicResource Surface2Bg}">
+                                    <TextBlock Name="EditCountText" Text="0/0" FontSize="9.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource AccentBrush}"/>
+                                </Border>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Edit" FontSize="13" FontWeight="SemiBold"/>
+                                    <TextBlock Name="EditNavSubtitle" Text="draw characters" FontSize="9"
+                                               Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                            </DockPanel>
+                        </Button>
                     </StackPanel>
                 </Border>
 
                 <!-- Settings panels (Edit / Type) -->
                 <Grid Grid.Row="1">
+
+                    <!-- ── NOTES FOLDERS ──────────────────────────── -->
+                    <Border Name="NotesLeftPanel" Visibility="Collapsed">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                                <RowDefinition Height="Auto"/>
+                            </Grid.RowDefinitions>
+                            <DockPanel Grid.Row="0" Margin="16,14,10,8">
+                                <Button DockPanel.Dock="Right" Click="NewFolder_Click"
+                                        Width="22" Height="22" Padding="0"
+                                        Background="Transparent" BorderThickness="0"
+                                        ToolTip="New category">
+                                    <TextBlock Text="+" FontSize="17" FontWeight="Light"
+                                               Foreground="{DynamicResource AccentBrush}"
+                                               VerticalAlignment="Center" HorizontalAlignment="Center"
+                                               Margin="0,-2,0,0"/>
+                                </Button>
+                                <TextBlock Text="LIBRARY" Style="{StaticResource SectionLabel}"
+                                           Margin="0" VerticalAlignment="Center"/>
+                            </DockPanel>
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <StackPanel Name="FolderListPanel" Margin="8,0,8,8"/>
+                            </ScrollViewer>
+                        </Grid>
+                    </Border>
 
                     <!-- ── EDIT SETTINGS ──────────────────────────── -->
                     <Border Name="EditLeftPanel">
@@ -842,15 +809,6 @@
                                                 <TextBlock Text="&#x1F441;" FontSize="11"
                                                            Margin="0,0,4,0" VerticalAlignment="Center"/>
                                                 <TextBlock Text="Ghost" FontSize="10" VerticalAlignment="Center"/>
-                                            </StackPanel>
-                                        </Button>
-                                        <Button Name="EraserBtn" Height="28" Padding="8,0"
-                                                Margin="0,0,3,3"
-                                                ToolTip="Eraser (E)" Click="EraserBtn_Click">
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="&#x232B;" FontSize="11"
-                                                           Margin="0,0,4,0" VerticalAlignment="Center"/>
-                                                <TextBlock Text="Erase" FontSize="10" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Height="28" Padding="8,0" Margin="0,0,3,3"
@@ -883,42 +841,148 @@
                                           ClipToBounds="True">
                                 <StackPanel Margin="10,10,10,10">
 
-                                    <TextBlock Text="BRUSH SHAPE" Style="{StaticResource SectionLabel}"/>
-
+                                    <TextBlock Text="TEMPLATE" Style="{StaticResource SectionLabel}"/>
                                     <Border Background="{DynamicResource Surface2Bg}"
                                             CornerRadius="8" Padding="8" Margin="0,0,0,10">
-                                        <WrapPanel>
-                                            <Button Name="BrushRoundBtn"    Width="40" Height="30"
-                                                    Margin="0,0,3,3" Tag="Round"
-                                                    Click="BrushShape_Click" ToolTip="Round">
-                                                <TextBlock Text="&#x25CF;" FontSize="13"/>
+                                        <StackPanel>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button Grid.Column="0" Height="28" Margin="0,0,3,0"
+                                                        ToolTip="Export this template as an installable .ttf font"
+                                                        Click="ExportFontButton_Click">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x2191;" FontSize="12" FontWeight="Bold"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="Export .ttf" FontSize="10" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Grid.Column="1" Height="28" Margin="3,0,0,0"
+                                                        ToolTip="Import a .ttf font or .nwt bundle as an editable template"
+                                                        Click="ImportTemplate_Click">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x2193;" FontSize="12" FontWeight="Bold"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   VerticalAlignment="Center" Margin="0,0,4,0"/>
+                                                        <TextBlock Text="Import" FontSize="10" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </Grid>
+                                            <ComboBox Name="TemplateComboBox" Height="30"
+                                                      SelectionChanged="TemplateComboBox_SelectionChanged"/>
+                                            <Grid Margin="0,6,0,0">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button Grid.Column="0" Height="28" Margin="0,0,3,0"
+                                                        ToolTip="New template" Click="NewTemplate_Click">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="+" FontSize="15" FontWeight="Light"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   VerticalAlignment="Center" Margin="0,-2,4,0"/>
+                                                        <TextBlock Text="New" FontSize="10" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Name="SetDefaultTemplateBtn" Grid.Column="1" Height="28"
+                                                        Margin="3,0,3,0" Padding="0" ToolTip="Set as default"
+                                                        Click="SetDefaultTemplate_Click">
+                                                    <TextBlock Name="DefaultStarLabel" Text="&#x2606;" FontSize="14"
+                                                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                </Button>
+                                                <Button Grid.Column="2" Height="28" Margin="3,0,0,0" Padding="0"
+                                                        ToolTip="Delete template" Click="DeleteTemplate_Click">
+                                                    <TextBlock Text="&#x2715;" FontSize="11" FontWeight="Bold"
+                                                               Foreground="{DynamicResource DangerBrush}"
+                                                               VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                                </Button>
+                                            </Grid>
+
+                                            <!-- Live font preview (pangram, current glyphs) -->
+                                            <Border CornerRadius="6" Height="56" Margin="0,8,0,0"
+                                                    Background="{DynamicResource CanvasBg}"
+                                                    BorderBrush="{DynamicResource AppBorderBrush}"
+                                                    BorderThickness="1"
+                                                    ToolTip="Live preview of your font — updates as you draw">
+                                                <skia:SKElement Name="FontPreviewCanvas"
+                                                                PaintSurface="FontPreviewCanvas_PaintSurface"/>
+                                            </Border>
+                                        </StackPanel>
+                                    </Border>
+
+                                    <TextBlock Text="BRUSH" Style="{StaticResource SectionLabel}"/>
+
+                                    <Border Background="{DynamicResource Surface2Bg}"
+                                            CornerRadius="8" Padding="8" Margin="0,0,0,12">
+                                        <StackPanel>
+                                            <UniformGrid Columns="3" Rows="2">
+                                                <Button Name="BrushRoundBtn" Height="52" Margin="2"
+                                                        Tag="Round" Click="BrushShape_Click" ToolTip="Round — even, soft tip">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x25CF;" FontSize="15" TextAlignment="Center"/>
+                                                        <TextBlock Text="Round" FontSize="9" TextAlignment="Center"
+                                                                   Margin="0,3,0,0" Opacity="0.85"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Name="BrushFlatBtn" Height="52" Margin="2"
+                                                        Tag="Flat" Click="BrushShape_Click" ToolTip="Flat — thin marker edge">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x25AC;" FontSize="15" TextAlignment="Center"/>
+                                                        <TextBlock Text="Flat" FontSize="9" TextAlignment="Center"
+                                                                   Margin="0,3,0,0" Opacity="0.85"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Name="BrushCalligBtn" Height="52" Margin="2"
+                                                        Tag="Calligraphy" Click="BrushShape_Click" ToolTip="Calligraphy — angled nib">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x2712;" FontSize="15" TextAlignment="Center"/>
+                                                        <TextBlock Text="Callig." FontSize="9" TextAlignment="Center"
+                                                                   Margin="0,3,0,0" Opacity="0.85"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Name="BrushTriangleBtn" Height="52" Margin="2"
+                                                        Tag="Triangle" Click="BrushShape_Click" ToolTip="Triangle — tapered to a point">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x25B2;" FontSize="13" TextAlignment="Center"/>
+                                                        <TextBlock Text="Triangle" FontSize="9" TextAlignment="Center"
+                                                                   Margin="0,3,0,0" Opacity="0.85"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Name="BrushInkBtn" Height="52" Margin="2"
+                                                        Tag="Ink" Click="BrushShape_Click" ToolTip="Ink — pressure-like variation">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x1F58B;" FontSize="14" TextAlignment="Center"/>
+                                                        <TextBlock Text="Ink" FontSize="9" TextAlignment="Center"
+                                                                   Margin="0,3,0,0" Opacity="0.85"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Name="BrushChiselBtn" Height="52" Margin="2"
+                                                        Tag="Chisel" Click="BrushShape_Click" ToolTip="Chisel — fixed 45° edge">
+                                                    <StackPanel VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x2571;" FontSize="15" TextAlignment="Center"/>
+                                                        <TextBlock Text="Chisel" FontSize="9" TextAlignment="Center"
+                                                                   Margin="0,3,0,0" Opacity="0.85"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </UniformGrid>
+
+                                            <Border Height="1" Margin="2,8,2,8"
+                                                    Background="{DynamicResource AppBorderBrush}"/>
+
+                                            <Button Name="EraserBtn" Height="32" Margin="2,0"
+                                                    ToolTip="Eraser (E)" Click="EraserBtn_Click">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Text="&#x232B;" FontSize="14"
+                                                               VerticalAlignment="Center" Margin="0,0,7,0"/>
+                                                    <TextBlock Text="Eraser" FontSize="11"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
                                             </Button>
-                                            <Button Name="BrushFlatBtn"     Width="40" Height="30"
-                                                    Margin="0,0,3,3" Tag="Flat"
-                                                    Click="BrushShape_Click" ToolTip="Flat">
-                                                <TextBlock Text="&#x25AC;" FontSize="13"/>
-                                            </Button>
-                                            <Button Name="BrushCalligBtn"   Width="40" Height="30"
-                                                    Margin="0,0,3,3" Tag="Calligraphy"
-                                                    Click="BrushShape_Click" ToolTip="Calligraphy">
-                                                <TextBlock Text="&#x2712;" FontSize="13"/>
-                                            </Button>
-                                            <Button Name="BrushTriangleBtn" Width="40" Height="30"
-                                                    Margin="0,0,3,3" Tag="Triangle"
-                                                    Click="BrushShape_Click" ToolTip="Triangle">
-                                                <TextBlock Text="&#x25B2;" FontSize="11"/>
-                                            </Button>
-                                            <Button Name="BrushInkBtn"      Width="40" Height="30"
-                                                    Margin="0,0,3,3" Tag="Ink"
-                                                    Click="BrushShape_Click" ToolTip="Ink">
-                                                <TextBlock Text="&#x1F58B;" FontSize="12"/>
-                                            </Button>
-                                            <Button Name="BrushChiselBtn"   Width="40" Height="30"
-                                                    Margin="0,0,0,3" Tag="Chisel"
-                                                    Click="BrushShape_Click" ToolTip="Chisel">
-                                                <TextBlock Text="&#x2571;" FontSize="13"/>
-                                            </Button>
-                                        </WrapPanel>
+                                        </StackPanel>
                                     </Border>
 
                                     <!-- Brush preview -->
@@ -930,10 +994,10 @@
                                                         PaintSurface="BrushPreviewCanvas_PaintSurface"/>
                                     </Border>
 
-                                    <TextBlock Text="SETTINGS" Style="{StaticResource SectionLabel}"/>
+                                    <TextBlock Text="BRUSH SETTINGS" Style="{StaticResource SectionLabel}"/>
 
                                     <Border Background="{DynamicResource Surface2Bg}"
-                                            CornerRadius="8" Padding="12,10" Margin="0,0,0,4">
+                                            CornerRadius="8" Padding="12,12" Margin="0,0,0,4">
                                         <StackPanel>
                                             <DockPanel Margin="0,0,0,3">
                                                 <TextBlock Text="Size" FontSize="11"
@@ -1049,9 +1113,6 @@
                                         </StackPanel>
                                     </Border>
 
-                                </StackPanel>
-                            </ScrollViewer>
-
                             <!-- Inline color picker -->
                             <Border Grid.Row="2" Padding="10,10"
                                     Background="{DynamicResource Surface2Bg}"
@@ -1163,6 +1224,8 @@
                                     <ProgressBar Name="AlphabetProgressBar" Maximum="100"/>
                                 </StackPanel>
                             </Border>
+                                </StackPanel>
+                            </ScrollViewer>
 
                         </Grid>
                     </Border>
@@ -1173,7 +1236,6 @@
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
                                 <RowDefinition Height="*"/>
-                                <RowDefinition Height="Auto"/>
                             </Grid.RowDefinitions>
 
                             <Border Grid.Row="0" Padding="10,8"
@@ -1184,25 +1246,10 @@
                                     <TextBlock Text="STYLE" FontSize="9" FontWeight="SemiBold"
                                                Foreground="{DynamicResource SecondaryText}"
                                                VerticalAlignment="Center"/>
-                                    <WrapPanel DockPanel.Dock="Right" Orientation="Horizontal"
-                                               HorizontalAlignment="Right">
-                                        <Button Name="BoldBtn" Width="30" Height="26" Margin="3,0"
-                                                ToolTip="Bold (Ctrl+B)" Click="BoldBtn_Click">
-                                            <TextBlock FontWeight="Bold" FontSize="13"
-                                                       FontFamily="Georgia" Text="B"/>
-                                        </Button>
-                                        <Button Name="ItalicBtn" Width="30" Height="26" Margin="3,0"
-                                                ToolTip="Italic (Ctrl+I)" Click="ItalicBtn_Click">
-                                            <TextBlock FontStyle="Italic" FontSize="13"
-                                                       FontFamily="Georgia" Text="I"/>
-                                        </Button>
-                                        <Border Name="TypeColorSwatch" Width="22" Height="22"
-                                                Margin="5,0,2,0" CornerRadius="6"
-                                                Background="#E8E8E8"
-                                                BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" Cursor="Hand"
-                                                MouseLeftButtonDown="TypeColorSwatch_Click"/>
-                                    </WrapPanel>
+                                    <!-- TypeColorSwatch hidden — used only as binding source for toolbar -->
+                                    <Border Name="TypeColorSwatch" Visibility="Collapsed"
+                                            Background="#E8E8E8"/>
+                                    <!-- B/I moved to the formatting toolbar above the canvas -->
                                 </DockPanel>
                             </Border>
 
@@ -1475,56 +1522,6 @@
                                 </StackPanel>
                             </ScrollViewer>
 
-                            <!-- STT -->
-                            <Border Grid.Row="2" Padding="10,10"
-                                    Background="{DynamicResource Surface2Bg}"
-                                    BorderBrush="{DynamicResource AppBorderBrush}"
-                                    BorderThickness="0,1,0,0">
-                                <StackPanel>
-                                    <Button Name="SpeechBtn" Height="40" Margin="0,0,0,8"
-                                            BorderThickness="0"
-                                            Background="{DynamicResource NavActiveBg}"
-                                            Click="SpeechBtn_Click">
-                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                            <TextBlock Name="SpeechBtnIcon" Text="🎤" FontSize="16"
-                                                       VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                            <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="Voice Input" FontSize="12"
-                                                           FontWeight="SemiBold"/>
-                                                <TextBlock Name="SttStatusLabel"
-                                                           Text="click to record" FontSize="9"
-                                                           Foreground="{DynamicResource SecondaryText}"/>
-                                            </StackPanel>
-                                        </StackPanel>
-                                    </Button>
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="*"/>
-                                        </Grid.ColumnDefinitions>
-                                        <ComboBox Name="SttDurationCombo" Grid.Column="0"
-                                                  Height="28" FontSize="10" Margin="0,0,4,0"
-                                                  SelectionChanged="SttDuration_Changed">
-                                            <ComboBoxItem Content="3s"/>
-                                            <ComboBoxItem Content="5s" IsSelected="True"/>
-                                            <ComboBoxItem Content="10s"/>
-                                            <ComboBoxItem Content="15s"/>
-                                            <ComboBoxItem Content="30s"/>
-                                        </ComboBox>
-                                        <ComboBox Name="SttLangCombo" Grid.Column="1"
-                                                  Height="28" FontSize="10"
-                                                  SelectionChanged="SttLang_Changed">
-                                            <ComboBoxItem Content="pl" IsSelected="True"/>
-                                            <ComboBoxItem Content="en"/>
-                                            <ComboBoxItem Content="de"/>
-                                            <ComboBoxItem Content="fr"/>
-                                            <ComboBoxItem Content="es"/>
-                                            <ComboBoxItem Content="it"/>
-                                            <ComboBoxItem Content="auto"/>
-                                        </ComboBox>
-                                    </Grid>
-                                </StackPanel>
-                            </Border>
 
                         </Grid>
                     </Border>
@@ -1533,31 +1530,194 @@
             </Grid>
 
             <!-- ══ CANVAS AREA ═════════════════════════════════════ -->
-            <Grid Grid.Column="1" Background="{DynamicResource AppBg}">
+            <Grid Name="CenterContent" Grid.Column="1" Background="{DynamicResource AppBg}">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="38"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
                 <!-- Canvas header -->
-                <Border Grid.Row="0"
+                <Border Name="CenterPanelHeader" Grid.Row="0" Height="38"
                         Background="{DynamicResource Surface2Bg}"
                         BorderBrush="{DynamicResource AppBorderBrush}"
                         BorderThickness="0,0,0,1" Padding="18,0">
-                    <DockPanel VerticalAlignment="Center">
-                        <TextBlock Name="CenterPanelTitle" Text="ALPHABET EDIT"
-                                   FontSize="10" FontWeight="SemiBold"
-                                   Foreground="{DynamicResource SecondaryText}"/>
-                        <Button Name="PreviewAlphabetBtn" DockPanel.Dock="Right"
-                                Height="26" Padding="12,0"
-                                Click="PreviewAlphabetButton_Click"
-                                ToolTip="Preview all characters">
-                            <TextBlock Text="Preview All" FontSize="11"/>
+                    <TextBlock Name="CenterPanelTitle" Text="ALPHABET EDIT"
+                               FontSize="10" FontWeight="SemiBold"
+                               Foreground="{DynamicResource SecondaryText}"
+                               VerticalAlignment="Center"/>
+                </Border>
+
+                <!-- Note tabs bar -->
+                <Border Name="NoteTabBar" Grid.Row="1" Visibility="Collapsed"
+                        Background="{DynamicResource Surface2Bg}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="0,0,0,1" Height="36">
+                    <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Disabled">
+                        <StackPanel Name="NoteTabsPanel" Orientation="Horizontal"/>
+                    </ScrollViewer>
+                </Border>
+
+                <!-- Type mode formatting toolbar -->
+                <Border Name="TypeToolbar" Grid.Row="2" Visibility="Collapsed"
+                        Background="{DynamicResource Surface2Bg}"
+                        BorderBrush="{DynamicResource AppBorderBrush}"
+                        BorderThickness="0,0,0,1">
+                    <DockPanel Margin="6,4,6,4" LastChildFill="False">
+
+                        <!-- Word / char counter (right) -->
+                        <TextBlock Name="TypeStatsLabel" DockPanel.Dock="Right"
+                                   VerticalAlignment="Center" Margin="8,0,6,0"
+                                   FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+
+                        <!-- ‹ All notes (only when note active) -->
+                        <Button Name="NotesBackBtn" DockPanel.Dock="Left"
+                                Visibility="Collapsed"
+                                Click="NotesBack_Click"
+                                Height="26" Padding="8,0" Margin="0,0,2,0"
+                                Background="Transparent" BorderThickness="0"
+                                ToolTip="Save and back to notes">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#x2039;" FontSize="15"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           VerticalAlignment="Center" Margin="0,-1,4,0"/>
+                                <TextBlock Text="All notes" FontSize="11"
+                                           Foreground="{DynamicResource AccentBrush}"
+                                           VerticalAlignment="Center"/>
+                            </StackPanel>
+                        </Button>
+                        <Border Name="NotesBackSep" DockPanel.Dock="Left"
+                                Visibility="Collapsed"
+                                Width="1" Margin="4,3,8,3"
+                                Background="{DynamicResource AppBorderBrush}"/>
+
+                        <!-- ── Left: formatting controls ─────────────── -->
+                        <!-- Format: Bold Italic Underline Strike -->
+                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="0,0,4,0">
+                            <Button Name="TbBoldBtn" Content="B" ToolTip="Bold (Ctrl+B)"
+                                    Click="TbBold_Click" FontWeight="Bold"
+                                    Width="28" Height="26" Margin="1,1" FontSize="13"/>
+                            <Button Name="TbItalicBtn" Content="I" ToolTip="Italic (Ctrl+I)"
+                                    Click="TbItalic_Click" FontStyle="Italic"
+                                    Width="28" Height="26" Margin="1,1" FontSize="13"/>
+                            <Button Name="TbUnderlineBtn" ToolTip="Underline (Ctrl+U)"
+                                    Click="TbUnderline_Click"
+                                    Width="28" Height="26" Margin="1,1">
+                                <TextBlock TextDecorations="Underline" Text="U" FontSize="13"/>
+                            </Button>
+                            <Button Name="TbStrikeBtn" ToolTip="Strikethrough"
+                                    Click="TbStrike_Click"
+                                    Width="28" Height="26" Margin="1,1">
+                                <TextBlock TextDecorations="Strikethrough" Text="S" FontSize="13"/>
+                            </Button>
+                        </StackPanel>
+
+                        <Border DockPanel.Dock="Left" Width="1" Margin="4,3,8,3"
+                                Background="{DynamicResource AppBorderBrush}"/>
+
+                        <!-- Alignment -->
+                        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" Margin="0,0,4,0">
+                            <Button Name="TbAlignLBtn" ToolTip="Align Left"
+                                    Click="AlignLeft_Click" Width="30" Height="26" Margin="1,1">
+                                <StackPanel Width="17" Height="13" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Border Height="2" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Width="11" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Left" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Width="14" CornerRadius="1" HorizontalAlignment="Left" Background="{DynamicResource PrimaryText}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Name="TbAlignCBtn" ToolTip="Align Center"
+                                    Click="AlignCenter_Click" Width="30" Height="26" Margin="1,1">
+                                <StackPanel Width="17" Height="13" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Border Height="2" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Width="11" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Center" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Width="14" CornerRadius="1" HorizontalAlignment="Center" Background="{DynamicResource PrimaryText}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Name="TbAlignRBtn" ToolTip="Align Right"
+                                    Click="AlignRight_Click" Width="30" Height="26" Margin="1,1">
+                                <StackPanel Width="17" Height="13" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Border Height="2" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Width="11" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Right" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Width="14" CornerRadius="1" HorizontalAlignment="Right" Background="{DynamicResource PrimaryText}"/>
+                                </StackPanel>
+                            </Button>
+                            <Button Name="TbAlignJBtn" ToolTip="Justify"
+                                    Click="AlignJustify_Click" Width="30" Height="26" Margin="1,1">
+                                <StackPanel Width="17" Height="13" VerticalAlignment="Center" HorizontalAlignment="Center">
+                                    <Border Height="2" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" Margin="0,0,0,2" CornerRadius="1" HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryText}"/>
+                                    <Border Height="2" CornerRadius="1" HorizontalAlignment="Stretch" Background="{DynamicResource PrimaryText}"/>
+                                </StackPanel>
+                            </Button>
+                        </StackPanel>
+
+                        <Border DockPanel.Dock="Left" Width="1" Margin="4,3,8,3"
+                                Background="{DynamicResource AppBorderBrush}"/>
+
+                        <!-- Color picker -->
+                        <Button DockPanel.Dock="Left" Name="TbColorBtn" ToolTip="Text Color"
+                                Click="TypeColorPickerBtn_Click" Width="36" Height="26" Margin="1,1">
+                            <StackPanel Orientation="Vertical" VerticalAlignment="Center">
+                                <TextBlock Text="A" FontSize="13" FontWeight="SemiBold"
+                                           HorizontalAlignment="Center" Margin="0,-1,0,0"/>
+                                <Border Name="TbColorBar" Height="3" CornerRadius="1" Margin="4,1,4,0"
+                                        Background="{Binding Background, ElementName=TypeColorSwatch}"/>
+                            </StackPanel>
+                        </Button>
+
+                        <Border DockPanel.Dock="Left" Width="1" Margin="4,3,8,3"
+                                Background="{DynamicResource AppBorderBrush}"/>
+
+                        <!-- Font picker -->
+                        <ComboBox Name="TypeFontCombo" DockPanel.Dock="Left"
+                                  Height="26" Width="150" FontSize="11" Margin="1,1"
+                                  SelectionChanged="TypeFontCombo_SelectionChanged"
+                                  ToolTip="Font"/>
+
+                        <!-- ── Right: Voice Input ─────────────────────── -->
+                        <Border DockPanel.Dock="Right" Width="1" Margin="8,3,4,3"
+                                Background="{DynamicResource AppBorderBrush}"/>
+                        <ComboBox Name="SttLangCombo" DockPanel.Dock="Right"
+                                  Height="26" Width="52" FontSize="10" Margin="2,1"
+                                  SelectionChanged="SttLang_Changed" ToolTip="Language">
+                            <ComboBoxItem Content="pl" IsSelected="True"/>
+                            <ComboBoxItem Content="en"/>
+                            <ComboBoxItem Content="de"/>
+                            <ComboBoxItem Content="fr"/>
+                            <ComboBoxItem Content="es"/>
+                            <ComboBoxItem Content="it"/>
+                            <ComboBoxItem Content="auto"/>
+                        </ComboBox>
+                        <ComboBox Name="SttDurationCombo" DockPanel.Dock="Right"
+                                  Height="26" Width="50" FontSize="10" Margin="2,1"
+                                  SelectionChanged="SttDuration_Changed" ToolTip="Duration">
+                            <ComboBoxItem Content="3s"/>
+                            <ComboBoxItem Content="5s" IsSelected="True"/>
+                            <ComboBoxItem Content="10s"/>
+                            <ComboBoxItem Content="15s"/>
+                            <ComboBoxItem Content="30s"/>
+                        </ComboBox>
+                        <Button Name="SpeechBtn" DockPanel.Dock="Right"
+                                Height="26" Padding="8,0" Margin="2,1"
+                                BorderThickness="0"
+                                Background="{DynamicResource NavActiveBg}"
+                                Click="SpeechBtn_Click" ToolTip="Voice Input (Ctrl+M)">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Name="SpeechBtnIcon" Text="🎤" FontSize="12"
+                                           VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Voice" FontSize="10" FontWeight="SemiBold"/>
+                                    <TextBlock Name="SttStatusLabel" Text="click to record"
+                                               FontSize="8" Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                            </StackPanel>
                         </Button>
                     </DockPanel>
                 </Border>
 
-                <Grid Grid.Row="1">
+                <Grid Grid.Row="3">
                     <ScrollViewer Name="AlphabetScrollViewer"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
@@ -1567,10 +1727,14 @@
                                             PaintSurface="AlphabetEditCanvas_PaintSurface"
                                             IsHitTestVisible="False"/>
                             <Canvas Name="AlphabetInputCanvas" Background="Transparent"
+                                    Stylus.IsPressAndHoldEnabled="False"
                                     MouseLeftButtonDown="Alphabet_MouseDown"
                                     MouseMove="Alphabet_MouseMove"
                                     MouseLeftButtonUp="Alphabet_MouseUp"
-                                    MouseRightButtonDown="Alphabet_MouseRightDown"/>
+                                    MouseRightButtonDown="Alphabet_MouseRightDown"
+                                    StylusDown="Alphabet_StylusDown"
+                                    StylusMove="Alphabet_StylusMove"
+                                    StylusUp="Alphabet_StylusUp"/>
                         </Grid>
                     </ScrollViewer>
                     <ScrollViewer Name="TypeScrollViewer" Visibility="Collapsed"
@@ -1586,9 +1750,146 @@
                                             PaintSurface="TypeSkia_PaintSurface"
                                             IsHitTestVisible="False"/>
                             <Canvas Name="DisplayCanvas" Background="Transparent"
-                                    MouseLeftButtonDown="TypeCanvas_MouseDown"/>
+                                    MouseLeftButtonDown="TypeCanvas_MouseDown"
+                                    MouseMove="TypeCanvas_MouseMove"
+                                    MouseLeftButtonUp="TypeCanvas_MouseUp"
+                                    Cursor="IBeam"/>
                         </Grid>
                     </ScrollViewer>
+
+                    <!-- ── NOTES PANEL ──────────────────────────────── -->
+                    <Grid Name="NotesPanel" Visibility="Collapsed" Background="{DynamicResource AppBg}">
+
+                        <!-- ══ LIBRARY VIEW ══════════════════════════ -->
+                        <Grid Name="NotesLibraryView">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+
+                            <!-- Header -->
+                            <StackPanel Grid.Row="0" Margin="32,28,32,14">
+                                <DockPanel>
+                                    <ComboBox DockPanel.Dock="Right" Name="SortCombo"
+                                              Width="150" Height="30" FontSize="11"
+                                              VerticalAlignment="Center" Margin="0,0,8,0"
+                                              ToolTip="Sort order"
+                                              SelectionChanged="SortCombo_Changed">
+                                        <ComboBoxItem Content="Manual order" Tag="manual" IsSelected="True"/>
+                                        <ComboBoxItem Content="Name (A–Z)" Tag="name"/>
+                                        <ComboBoxItem Content="Date created" Tag="created"/>
+                                        <ComboBoxItem Content="Date modified" Tag="modified"/>
+                                    </ComboBox>
+                                    <TextBlock Name="NotesViewTitle" Text="Home"
+                                               FontSize="20" FontWeight="Bold"
+                                               Foreground="{DynamicResource PrimaryText}"
+                                               VerticalAlignment="Center"/>
+                                </DockPanel>
+
+                                <!-- Search -->
+                                <Border Background="{DynamicResource Surface2Bg}"
+                                        BorderBrush="{DynamicResource AppBorderBrush}"
+                                        BorderThickness="1" CornerRadius="8"
+                                        Margin="0,14,0,0" Padding="10,0">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Left" Text="&#x1F50D;"
+                                                   FontSize="12" Opacity="0.5"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                        <Button DockPanel.Dock="Right" Name="SearchClearBtn"
+                                                Width="22" Height="22" Padding="0"
+                                                Background="Transparent" BorderThickness="0"
+                                                Visibility="Collapsed"
+                                                Click="SearchClear_Click" ToolTip="Clear">
+                                            <TextBlock Text="&#x2715;" FontSize="10"
+                                                       Foreground="{DynamicResource SecondaryText}"
+                                                       VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                                        </Button>
+                                        <Grid>
+                                            <TextBlock Name="SearchPlaceholder" Text="Search notes and #tags…"
+                                                       FontSize="12.5" Opacity="0.45"
+                                                       Foreground="{DynamicResource SecondaryText}"
+                                                       VerticalAlignment="Center" IsHitTestVisible="False"/>
+                                            <TextBox Name="NotesSearchBox" Height="36"
+                                                     Background="Transparent" BorderThickness="0"
+                                                     VerticalContentAlignment="Center"
+                                                     FontSize="12.5"
+                                                     TextChanged="NotesSearch_TextChanged"/>
+                                        </Grid>
+                                    </DockPanel>
+                                </Border>
+
+                                <!-- Tag filter strip -->
+                                <WrapPanel Name="TagFilterPanel" Margin="0,10,0,0"/>
+                            </StackPanel>
+
+                            <!-- Notebook content -->
+                            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,2,0">
+                                <StackPanel Margin="32,0,32,32">
+
+                                    <!-- Recently opened (Home only) -->
+                                    <StackPanel Name="RecentSection" Visibility="Collapsed" Margin="0,0,0,18">
+                                        <TextBlock Text="RECENTLY OPENED" Style="{StaticResource SectionLabel}"/>
+                                        <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                                                      VerticalScrollBarVisibility="Disabled">
+                                            <StackPanel Name="RecentPanel" Orientation="Horizontal"/>
+                                        </ScrollViewer>
+                                    </StackPanel>
+
+                                    <!-- Favorites (Home only) -->
+                                    <StackPanel Name="FavoritesSection" Visibility="Collapsed" Margin="0,0,0,18">
+                                        <TextBlock Text="FAVORITES" Style="{StaticResource SectionLabel}"/>
+                                        <WrapPanel Name="FavoritesPanel" Orientation="Horizontal"/>
+                                    </StackPanel>
+
+                                    <!-- All / folder notes -->
+                                    <TextBlock Name="AllNotesLabel" Text="ALL NOTES"
+                                               Style="{StaticResource SectionLabel}"/>
+                                    <WrapPanel Name="NotesGridPanel" Orientation="Horizontal"/>
+                                </StackPanel>
+                            </ScrollViewer>
+
+                            <!-- Empty state -->
+                            <Border Name="NotesEmptyState" Grid.Row="1" Visibility="Collapsed">
+                                <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center"
+                                            MaxWidth="320">
+                                    <Border Width="84" Height="84" CornerRadius="20"
+                                            Background="{DynamicResource Surface2Bg}"
+                                            BorderBrush="{DynamicResource AppBorderBrush}"
+                                            BorderThickness="1"
+                                            HorizontalAlignment="Center" Margin="0,0,0,18">
+                                        <TextBlock Name="EmptyStateIcon" Text="&#x1F4D3;" FontSize="40"
+                                                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                   Opacity="0.85"/>
+                                    </Border>
+                                    <TextBlock Name="EmptyStateTitle" Text="No notes yet"
+                                               FontSize="16" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryText}"
+                                               HorizontalAlignment="Center" Margin="0,0,0,7"/>
+                                    <TextBlock Name="EmptyStateHint" Text="Create your first notebook to start writing by hand."
+                                               FontSize="12.5" TextWrapping="Wrap"
+                                               LineHeight="18"
+                                               TextAlignment="Center"
+                                               Foreground="{DynamicResource SecondaryText}"
+                                               HorizontalAlignment="Center" Margin="0,0,0,20"/>
+                                    <Button Name="EmptyStateBtn" Click="EmptyStateBtn_Click"
+                                            HorizontalAlignment="Center"
+                                            Height="38" Padding="20,0"
+                                            Background="{DynamicResource AccentBrush}"
+                                            BorderThickness="0" Foreground="White">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Name="EmptyStateBtnIcon" Text="+" FontSize="17"
+                                                       FontWeight="Light" Foreground="White"
+                                                       VerticalAlignment="Center" Margin="0,-2,7,0"/>
+                                            <TextBlock Name="EmptyStateBtnText" Text="New note" FontSize="13"
+                                                       FontWeight="SemiBold" Foreground="White"
+                                                       VerticalAlignment="Center"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Border>
+                        </Grid>
+
+                    </Grid>
                 </Grid>
             </Grid>
 
@@ -1596,6 +1897,12 @@
 
         <!-- Hidden compat elements -->
         <Grid Visibility="Collapsed">
+            <TextBox Name="NoteContentBox" TextChanged="NoteContent_Changed"/>
+            <TextBox Name="NoteTitleBox" TextChanged="NoteTitle_Changed"/>
+            <TextBlock Name="NotesSavedLabel"/>
+            <TextBlock Name="NoteStatsLabel"/>
+            <Border Name="NoteEditorAccent"/>
+            <Border Name="NoteContextAccent"/>
             <UniformGrid Name="CharacterGrid" Columns="4"/>
             <TextBlock Name="CurrentCharacterText"/>
             <TextBox Name="CustomCharInput" MaxLength="1"
@@ -1606,6 +1913,296 @@
             <Button Name="Var1Btn" Click="VarBtn_Click" Tag="1"/>
             <Button Name="Var2Btn" Click="VarBtn_Click" Tag="2"/>
             <Button Name="Var3Btn" Click="VarBtn_Click" Tag="3"/>
+        </Grid>
+
+        <!-- Save-before-close overlay -->
+        <Grid Name="SaveCloseOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="100">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="360"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="24,22,24,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Save changes?" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}"
+                               Margin="0,0,0,10"/>
+                    <TextBlock Name="SaveCloseMsg"
+                               TextWrapping="Wrap" FontSize="12"
+                               Foreground="{DynamicResource SecondaryText}"
+                               Margin="0,0,0,24"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Content="Don't save" Click="SaveCloseDontSave_Click"
+                                Height="32" Padding="16,0" Margin="0,0,8,0"/>
+                        <Button Content="Cancel" Click="SaveCloseCancel_Click"
+                                Height="32" Padding="16,0" Margin="0,0,8,0"/>
+                        <Button Content="Save" Click="SaveCloseSave_Click"
+                                Height="32" Padding="20,0"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="White" BorderThickness="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Delete note confirmation overlay -->
+        <Grid Name="DeleteConfirmOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="100">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="340"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="24,22,24,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Delete note?" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}"
+                               Margin="0,0,0,10"/>
+                    <TextBlock Name="DeleteConfirmMsg"
+                               TextWrapping="Wrap" FontSize="12"
+                               Foreground="{DynamicResource SecondaryText}"
+                               Margin="0,0,0,24"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                        <Button Name="DeleteCancelBtn" Content="Cancel"
+                                Click="DeleteCancel_Click"
+                                Height="32" Padding="20,0" Margin="0,0,10,0"/>
+                        <Button Name="DeleteConfirmBtn" Content="Delete"
+                                Click="DeleteConfirm_Click"
+                                Height="32" Padding="20,0"
+                                Background="{DynamicResource DangerBrush}"
+                                Foreground="White"
+                                BorderThickness="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Rename note overlay -->
+        <Grid Name="RenameOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="100">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="320"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="24,22,24,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Rename note" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,14"/>
+                    <TextBox Name="RenameBox" FontSize="13" Padding="10,8"
+                             KeyDown="RenameBox_KeyDown"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <Button Content="Cancel" Click="RenameCancel_Click"
+                                Height="32" Padding="16,0" Margin="0,0,8,0"/>
+                        <Button Content="Rename" Click="RenameConfirm_Click"
+                                Height="32" Padding="20,0"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="White" BorderThickness="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Edit tags overlay -->
+        <Grid Name="TagsOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="100">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="340"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="24,22,24,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Edit tags" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,6"/>
+                    <TextBlock Text="Separate tags with commas"
+                               FontSize="11" Foreground="{DynamicResource SecondaryText}"
+                               Margin="0,0,0,14"/>
+                    <TextBox Name="TagsBox" FontSize="13" Padding="10,8"
+                             KeyDown="TagsBox_KeyDown"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,14,0,0">
+                        <Button Content="Cancel" Click="TagsCancel_Click"
+                                Height="32" Padding="16,0" Margin="0,0,8,0"/>
+                        <Button Content="Save" Click="TagsConfirm_Click"
+                                Height="32" Padding="20,0"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="White" BorderThickness="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Color picker overlay -->
+        <Grid Name="ColorPickerOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="100">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="300"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="24,22,24,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Cover color" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,16"/>
+                    <WrapPanel Name="ColorSwatchPanel" Margin="0,0,0,16"/>
+                    <Button Content="Cancel" Click="ColorPickerCancel_Click"
+                            HorizontalAlignment="Right"
+                            Height="32" Padding="16,0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Font export range overlay -->
+        <Grid Name="FontRangeOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="100">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="340"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="10"
+                    Padding="24,22,24,18">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Text="Export font" FontSize="15" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,6"/>
+                    <TextBlock Text="Choose which characters to include. Only drawn ones are exported."
+                               FontSize="11" TextWrapping="Wrap"
+                               Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,16"/>
+                    <CheckBox Name="RangeUpper" Content="Uppercase  A–Z" IsChecked="True"
+                              Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,8"/>
+                    <CheckBox Name="RangeLower" Content="Lowercase  a–z" IsChecked="True"
+                              Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,8"/>
+                    <CheckBox Name="RangeDigits" Content="Digits  0–9" IsChecked="True"
+                              Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,8"/>
+                    <CheckBox Name="RangePunct" Content="Punctuation  . , ! ? …" IsChecked="True"
+                              Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,8"/>
+                    <CheckBox Name="RangePolish" Content="Polish  ą ę ó ś …" IsChecked="True"
+                              Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,0"/>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
+                        <Button Content="Cancel" Click="FontRangeCancel_Click"
+                                Height="32" Padding="16,0" Margin="0,0,8,0"/>
+                        <Button Content="Export .ttf" Click="FontRangeExport_Click"
+                                Height="32" Padding="18,0"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="White" BorderThickness="0"/>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Toast notification host (bottom-right, above everything) -->
+        <StackPanel Name="ToastHost" Grid.RowSpan="2"
+                    HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                    Margin="0,0,20,20" Panel.ZIndex="200"
+                    IsHitTestVisible="True"/>
+
+        <!-- Command palette (Ctrl+K) -->
+        <Grid Name="CommandPaletteOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="280"
+              MouseLeftButtonDown="CommandPalette_BackdropClick">
+            <Border Width="540" VerticalAlignment="Top" Margin="0,110,0,0"
+                    HorizontalAlignment="Center"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="12"
+                    MouseLeftButtonDown="CommandPalette_CardClick">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.6"
+                                      BlurRadius="40" ShadowDepth="10" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <!-- search -->
+                    <Border BorderBrush="{DynamicResource AppBorderBrush}"
+                            BorderThickness="0,0,0,1" Padding="14,12">
+                        <DockPanel>
+                            <TextBlock DockPanel.Dock="Left" Text="&#x1F50D;" FontSize="13"
+                                       Opacity="0.5" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                            <TextBox Name="CommandSearchBox" Background="Transparent"
+                                     BorderThickness="0" FontSize="14"
+                                     VerticalContentAlignment="Center"
+                                     TextChanged="CommandSearch_TextChanged"/>
+                        </DockPanel>
+                    </Border>
+                    <!-- results -->
+                    <ScrollViewer MaxHeight="360" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Name="CommandListPanel" Margin="6"/>
+                    </ScrollViewer>
+                </StackPanel>
+            </Border>
+        </Grid>
+
+        <!-- Onboarding overlay (first run) -->
+        <Grid Name="OnboardingOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#B0000000" Panel.ZIndex="300">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Width="460"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="14"
+                    Padding="34,30,34,24">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.6"
+                                      BlurRadius="40" ShadowDepth="10" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <Border Width="72" Height="72" CornerRadius="18"
+                            Background="{DynamicResource Surface2Bg}"
+                            BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
+                            HorizontalAlignment="Center" Margin="0,0,0,18">
+                        <TextBlock Name="ObIcon" Text="&#x270D;" FontSize="34"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                    </Border>
+                    <TextBlock Name="ObTitle" Text="Welcome to nottwrite"
+                               FontSize="19" FontWeight="Bold"
+                               Foreground="{DynamicResource PrimaryText}"
+                               TextAlignment="Center" Margin="0,0,0,10"/>
+                    <TextBlock Name="ObBody"
+                               FontSize="13" LineHeight="20" TextWrapping="Wrap"
+                               TextAlignment="Center"
+                               Foreground="{DynamicResource SecondaryText}"
+                               Margin="0,0,0,22"/>
+
+                    <!-- step dots -->
+                    <StackPanel Name="ObDots" Orientation="Horizontal"
+                                HorizontalAlignment="Center" Margin="0,0,0,22"/>
+
+                    <DockPanel>
+                        <Button Name="ObSkipBtn" DockPanel.Dock="Left" Content="Skip"
+                                Click="Onboarding_Skip" Height="34" Padding="14,0"
+                                Background="Transparent"
+                                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"/>
+                        <Button Name="ObNextBtn" DockPanel.Dock="Right" Content="Next"
+                                Click="Onboarding_Next" Height="34" Padding="22,0"
+                                HorizontalAlignment="Right"
+                                Background="{DynamicResource AccentBrush}"
+                                Foreground="White" BorderThickness="0"/>
+                    </DockPanel>
+                </StackPanel>
+            </Border>
         </Grid>
 
     </Grid>

@@ -5,7 +5,7 @@
         Title="Settings" Width="560" Height="480"
         WindowStyle="None" ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        Background="#1E1E1E"
+        Background="{DynamicResource AppBg}"
         FontFamily="pack://application:,,,/Fonts/geist-font/Geist/ttf/#Geist">
 
     <shell:WindowChrome.WindowChrome>
@@ -13,8 +13,8 @@
                             GlassFrameThickness="0" CornerRadius="10"/>
     </shell:WindowChrome.WindowChrome>
 
-    <Border CornerRadius="10" Background="#1E1E1E"
-            BorderBrush="#3A3A3A" BorderThickness="1">
+    <Border CornerRadius="10" Background="{DynamicResource AppBg}"
+            BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1">
         <Grid>
             <Grid.RowDefinitions>
                 <RowDefinition Height="40"/>
@@ -24,18 +24,18 @@
 
             <!-- Title bar -->
             <Border Grid.Row="0" CornerRadius="10,10,0,0"
-                    Background="#202020" MouseLeftButtonDown="TitleBar_Drag">
+                    Background="{DynamicResource TitleBarBg}" MouseLeftButtonDown="TitleBar_Drag">
                 <Grid>
                     <TextBlock Text="Settings" FontSize="13" FontWeight="SemiBold"
-                               Foreground="#F0F0F0" VerticalAlignment="Center" Margin="16,0"/>
+                               Foreground="{DynamicResource PrimaryText}" VerticalAlignment="Center" Margin="16,0"/>
                     <Button HorizontalAlignment="Right" Width="40" Height="40"
                             shell:WindowChrome.IsHitTestVisibleInChrome="True"
-                            Click="BtnClose_Click" Foreground="#888888">
+                            Click="BtnClose_Click">
                         <Button.Style>
                             <Style TargetType="Button">
                                 <Setter Property="Background" Value="Transparent"/>
                                 <Setter Property="BorderThickness" Value="0"/>
-                                <Setter Property="Foreground" Value="#888888"/>
+                                <Setter Property="Foreground" Value="{DynamicResource SecondaryText}"/>
                                 <Setter Property="Cursor" Value="Hand"/>
                                 <Setter Property="FontSize" Value="11"/>
                                 <Setter Property="Template">
@@ -63,46 +63,207 @@
             </Border>
 
             <!-- Content -->
-            <Grid Grid.Row="1" Margin="12,8,12,4">
+            <Grid Grid.Row="1" Margin="0">
                 <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto"/>
                     <RowDefinition Height="Auto"/>
                     <RowDefinition Height="*"/>
                 </Grid.RowDefinitions>
 
-                <!-- Tab header -->
-                <TextBlock Grid.Row="0" Text="HOTKEYS" FontSize="10" FontWeight="SemiBold"
-                           Foreground="#555555"
-                           Margin="0,4,0,8"/>
+                <!-- Tab strip -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal"
+                            Background="{DynamicResource Surface2Bg}" Margin="0">
+                    <Button Name="TabHotkeysBtn" Content="Hotkeys"
+                            Height="34" Padding="16,0"
+                            Click="TabHotkeys_Click" Tag="hotkeys"
+                            Background="{DynamicResource CardBg}" Foreground="{DynamicResource PrimaryText}"
+                            BorderThickness="0,0,0,2" BorderBrush="{DynamicResource AccentBrush}"
+                            Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </Border>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                    <Button Name="TabThemesBtn" Content="Themes"
+                            Height="34" Padding="16,0"
+                            Click="TabThemes_Click" Tag="themes"
+                            Background="Transparent" Foreground="{DynamicResource SecondaryText}"
+                            BorderThickness="0,0,0,2" BorderBrush="Transparent"
+                            Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource AppBg}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                    <Button Name="TabGeneralBtn" Content="General"
+                            Height="34" Padding="16,0"
+                            Click="TabGeneral_Click" Tag="general"
+                            Background="Transparent" Foreground="{DynamicResource SecondaryText}"
+                            BorderThickness="0,0,0,2" BorderBrush="Transparent"
+                            Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate TargetType="Button">
+                                <Border Background="{TemplateBinding Background}"
+                                        BorderBrush="{TemplateBinding BorderBrush}"
+                                        BorderThickness="{TemplateBinding BorderThickness}"
+                                        Padding="{TemplateBinding Padding}">
+                                    <ContentPresenter VerticalAlignment="Center"/>
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource AppBg}"/>
+                                        <Setter Property="Foreground" Value="{DynamicResource PrimaryText}"/>
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                </StackPanel>
 
-                <!-- Column headers -->
-                <Grid Grid.Row="1" Margin="8,0,8,4">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*"/>
-                        <ColumnDefinition Width="155"/>
-                        <ColumnDefinition Width="70"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Grid.Column="0" Text="Action" FontSize="10" Foreground="#555555"/>
-                    <TextBlock Grid.Column="1" Text="Binding" FontSize="10" Foreground="#555555"/>
+                <!-- Hotkeys panel -->
+                <Grid Grid.Row="1" Name="HotkeysPanel" Margin="12,8,12,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="8,0,8,4">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="155"/>
+                            <ColumnDefinition Width="70"/>
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Grid.Column="0" Text="Action" FontSize="10" Foreground="{DynamicResource SecondaryText}"/>
+                        <TextBlock Grid.Column="1" Text="Binding" FontSize="10" Foreground="{DynamicResource SecondaryText}"/>
+                    </Grid>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Name="HotkeyPanel"/>
+                    </ScrollViewer>
                 </Grid>
 
-                <!-- Hotkey rows -->
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                    <StackPanel Name="HotkeyPanel"/>
+                <!-- Themes panel -->
+                <Grid Grid.Row="1" Name="ThemesPanel" Visibility="Collapsed" Margin="12,12,12,4">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Grid.Row="0" Text="Choose a theme" FontSize="11"
+                               Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,10"/>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Name="ThemeList" Margin="0,0,4,0"/>
+                    </ScrollViewer>
+                </Grid>
+                <!-- General panel -->
+                <ScrollViewer Grid.Row="1" Name="GeneralPanel" Visibility="Collapsed"
+                              VerticalScrollBarVisibility="Auto" Margin="12,12,12,4">
+                    <StackPanel>
+                        <!-- Visual effects section -->
+                        <TextBlock Text="VISUAL EFFECTS" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SecondaryText}" Margin="0,0,0,8"/>
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8"
+                                Padding="14,12" Margin="0,0,0,4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="3D card tilt effect"
+                                               FontSize="13" FontWeight="Medium"
+                                               Foreground="{DynamicResource PrimaryText}"/>
+                                    <TextBlock Text="Notebooks tilt in 3D as you hover over them"
+                                               FontSize="10" Margin="0,2,0,0"
+                                               Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                                <CheckBox Name="TiltCheckBox" Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          Checked="TiltCheckBox_Changed"
+                                          Unchecked="TiltCheckBox_Changed"/>
+                            </Grid>
+                        </Border>
+
+                        <!-- Auto-save section -->
+                        <TextBlock Text="AUTO-SAVE" FontSize="10" FontWeight="SemiBold"
+                                   Foreground="{DynamicResource SecondaryText}" Margin="0,12,0,8"/>
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8"
+                                Padding="14,12" Margin="0,0,0,4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="Auto-save notes"
+                                               FontSize="13" FontWeight="Medium"
+                                               Foreground="{DynamicResource PrimaryText}"/>
+                                    <TextBlock Text="Automatically save all open notes periodically"
+                                               FontSize="10" Margin="0,2,0,0"
+                                               Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                                <CheckBox Name="AutoSaveCheckBox" Grid.Column="1"
+                                          VerticalAlignment="Center"
+                                          Checked="AutoSaveCheckBox_Changed"
+                                          Unchecked="AutoSaveCheckBox_Changed"/>
+                            </Grid>
+                        </Border>
+                        <Border Background="{DynamicResource CardBg}" CornerRadius="8"
+                                Padding="14,12" Margin="0,0,0,4">
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                    <TextBlock Text="Save interval"
+                                               FontSize="13" FontWeight="Medium"
+                                               Foreground="{DynamicResource PrimaryText}"/>
+                                    <TextBlock Text="How often auto-save runs"
+                                               FontSize="10" Margin="0,2,0,0"
+                                               Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                                <ComboBox Name="AutoSaveIntervalCombo" Grid.Column="1"
+                                          Width="110" Height="28" FontSize="11"
+                                          SelectionChanged="AutoSaveInterval_Changed">
+                                    <ComboBoxItem Content="1 minute"  Tag="1"/>
+                                    <ComboBoxItem Content="2 minutes" Tag="2"/>
+                                    <ComboBoxItem Content="5 minutes" Tag="5" IsSelected="True"/>
+                                    <ComboBoxItem Content="10 minutes" Tag="10"/>
+                                    <ComboBoxItem Content="15 minutes" Tag="15"/>
+                                    <ComboBoxItem Content="30 minutes" Tag="30"/>
+                                </ComboBox>
+                            </Grid>
+                        </Border>
+                    </StackPanel>
                 </ScrollViewer>
             </Grid>
 
             <!-- Bottom bar -->
-            <Border Grid.Row="2" Background="#1A1A1A" CornerRadius="0,0,10,10"
-                    BorderBrush="#333333" BorderThickness="0,1,0,0" Padding="12,8">
+            <Border Grid.Row="2" Background="{DynamicResource Surface2Bg}" CornerRadius="0,0,10,10"
+                    BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,1,0,0" Padding="12,8">
                 <Grid>
-                    <TextBlock Name="StatusLabel" Text="" Foreground="#8B7DC4"
+                    <TextBlock Name="StatusLabel" Text="" Foreground="{DynamicResource AccentBrush}"
                                FontSize="11" VerticalAlignment="Center"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                         <Button Name="ResetAllBtn" Content="Reset All" Click="ResetAll_Click"
                                 Height="28" Padding="12,0" Margin="0,0,8,0"
-                                Background="#2E2E2E" Foreground="#AAAAAA"
-                                BorderBrush="#444" BorderThickness="1"
+                                Background="{DynamicResource ButtonBg}" Foreground="{DynamicResource SecondaryText}"
+                                BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="1"
                                 Cursor="Hand">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
@@ -114,7 +275,7 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#3A3A3A"/>
+                                            <Setter Property="Background" Value="{DynamicResource CardBg2}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>
@@ -122,7 +283,7 @@
                         </Button>
                         <Button Name="CloseBtn" Content="Close" Click="BtnClose_Click"
                                 Height="28" Padding="16,0"
-                                Background="#8B7DC4" Foreground="White"
+                                Background="{DynamicResource AccentBrush}" Foreground="White"
                                 BorderThickness="0" Cursor="Hand">
                             <Button.Template>
                                 <ControlTemplate TargetType="Button">
@@ -132,7 +293,7 @@
                                     </Border>
                                     <ControlTemplate.Triggers>
                                         <Trigger Property="IsMouseOver" Value="True">
-                                            <Setter Property="Background" Value="#A898D8"/>
+                                            <Setter Property="Background" Value="{DynamicResource AccentHover}"/>
                                         </Trigger>
                                     </ControlTemplate.Triggers>
                                 </ControlTemplate>

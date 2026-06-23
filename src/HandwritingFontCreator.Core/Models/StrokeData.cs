@@ -19,4 +19,5 @@ public class PointData
 {
     public double X { get; set; }
     public double Y { get; set; }
+    public double Pressure { get; set; } = 1.0;   // 0..~1.5; 1.0 = uniform (mouse)
 }

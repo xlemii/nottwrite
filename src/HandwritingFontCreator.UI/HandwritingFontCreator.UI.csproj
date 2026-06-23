@@ -18,6 +18,13 @@
     <UseWPF>true</UseWPF>
   </PropertyGroup>
 
+  <!-- Ship the bundled starter templates next to the exe; seeded to %APPDATA% on first run -->
+  <ItemGroup>
+    <None Include="..\..\templates\**\*.json"
+          Link="templates\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <ItemGroup>
     <Resource Include="Fonts\geist-font\Geist\ttf\Geist-Regular.ttf" />
     <Resource Include="Fonts\geist-font\Geist\ttf\Geist-Medium.ttf" />

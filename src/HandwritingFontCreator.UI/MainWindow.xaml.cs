@@ -11,6 +11,7 @@ using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Media.Media3D;
 using System.Windows.Shapes;
 using System.Windows.Threading;
 
@@ -19,11 +20,7 @@ namespace HandwritingFontCreator.UI;
 
 public partial class MainWindow : Window
 {
-    private bool _isDrawing;
-    private int _loadedStrokeCount = 0;
-
     private readonly List<List<Point>> _strokes = [];
-    private List<Point>? _currentStroke;
     private readonly Stack<List<Point>> _redoStack = [];
 
     private string CurrentTemplate   = "Default";
@@ -31,7 +28,6 @@ public partial class MainWindow : Window
     private string CurrentCharacter = "A";
     private Button? _selectedCharacterButton;
     private bool _hasUnsavedChanges;
-    private bool _isDarkTheme = true;
     private int _lineSpacing      = 100;
     private double _lineThickness = 1.0;
     private double _fontSize      = 180.0;
@@ -83,6 +79,34 @@ public partial class MainWindow : Window
     private char _editActiveChar = 'A';
     private List<Point>? _editCurrentStroke;
     private bool _isDrawingOnGrid;
+
+    // ── Pen pressure (Windows Ink) ───────────────────────────────
+    // per-point pressure, keyed by stroke-list reference
+    private readonly Dictionary<List<Point>, List<double>> _pressureByStroke = new();
+    private readonly Dictionary<char, List<List<double>>> _charPressures = new();
+    private bool   _penActive;
+    private double _penPressure = 1.0;
+    private double CurrentInputPressure => _penActive ? _penPressure : 1.0;
+
+    private void Alphabet_StylusDown(object sender, System.Windows.Input.StylusDownEventArgs e)
+    {
+        _penActive = true;
+        UpdatePenPressure(e.GetStylusPoints(AlphabetInputCanvas));
+    }
+    private void Alphabet_StylusMove(object sender, System.Windows.Input.StylusEventArgs e)
+    {
+        if (!_penActive) return;
+        UpdatePenPressure(e.GetStylusPoints(AlphabetInputCanvas));
+    }
+    private void Alphabet_StylusUp(object sender, System.Windows.Input.StylusEventArgs e) => _penActive = false;
+
+    private void UpdatePenPressure(System.Windows.Input.StylusPointCollection pts)
+    {
+        if (pts.Count == 0) return;
+        float pf = pts[^1].PressureFactor;   // 0..1
+        // map to half-width factor: light touch thin, hard touch slightly bold
+        _penPressure = 0.4 + 1.0 * pf;
+    }
     private Point _editCellOrigin;
     private Dictionary<char, (List<List<Point>> strokes, double fileW, double fileH)> _charCache = new();
     private Dictionary<char, System.Windows.Media.Color> _editCharColors = new();
@@ -125,17 +149,66 @@ public partial class MainWindow : Window
     // ── Type-on-paper model ────────────────────────────────────────
     private record struct CharData(
         char Ch, bool Bold, bool Italic, Color Color,
-        double RotDeg, double JitterY, int VariantIdx);
+        double RotDeg, double JitterY, int VariantIdx,
+        bool Underline = false, bool Strikethrough = false);
+
+    private enum TextAlign { Left, Center, Right, Justify }
 
     private List<CharData> _typeChars  = new();
     private int            _typeCursor = 0;
-    private bool           _typeBold   = false;
-    private bool           _typeItalic = false;
+    private string?        _typeFontName = null;   // null = use template strokes; non-null = system/app font name
+    private int            _selAnchor  = -1;   // -1 = no selection; fixed end of selection range
+    private bool      _typeBold        = false;
+    private bool      _typeItalic      = false;
+    private bool      _typeUnderline   = false;
+    private bool      _typeStrike      = false;
+    private TextAlign _textAlign       = TextAlign.Left;
+
+    private bool HasSelection => _selAnchor >= 0 && _selAnchor != _typeCursor;
+    private int  SelFrom      => HasSelection ? Math.Min(_selAnchor, _typeCursor) : _typeCursor;
+    private int  SelTo        => HasSelection ? Math.Max(_selAnchor, _typeCursor) : _typeCursor;
+    private void ClearSel()   => _selAnchor = -1;
     private bool           _cursorVisible = true;
     private DispatcherTimer? _cursorTimer;
 
     private Stack<(List<CharData> chars, int cursor)> _undoStack    = new();
     private Stack<(List<CharData> chars, int cursor)> _redoTypeStack = new();
+
+    // Per-note history so switching notes doesn't wipe undo/redo
+    private readonly Dictionary<string, Stack<(List<CharData> chars, int cursor)>> _undoByNote = new();
+    private readonly Dictionary<string, Stack<(List<CharData> chars, int cursor)>> _redoByNote = new();
+
+    // Save the live stacks into the per-note store
+    private void StashHistory(string noteId)
+    {
+        _undoByNote[noteId] = _undoStack;
+        _redoByNote[noteId] = _redoTypeStack;
+    }
+
+    // Load (or create) the stacks for a note into the live fields
+    private void LoadHistory(string noteId)
+    {
+        _undoStack     = _undoByNote.TryGetValue(noteId, out var u) ? u : new();
+        _redoTypeStack = _redoByNote.TryGetValue(noteId, out var r) ? r : new();
+    }
+
+    private void DropHistory(string noteId)
+    {
+        _undoByNote.Remove(noteId);
+        _redoByNote.Remove(noteId);
+    }
+
+    // ── Layout cache (invalidated by bumping _layoutVersion) ──────
+    private int    _layoutVersion       = 0;
+    private int    _cachedLayoutVersion = -1;
+    private double _cachedLayoutCanvasW = -1;
+    private List<CharLayout> _cachedLayout   = new();
+    private float[]          _cachedCursorXs = [];
+
+    // ── Reusable render resources (avoid per-frame allocs) ────────
+    private readonly List<Point>  _pointsBuffer   = new(256);
+    private readonly List<double> _pressureBuffer = new(256);
+    private readonly SKPaint     _sharedFillPaint = new() { IsAntialias = true, Style = SKPaintStyle.Fill };
 
     private void PushUndo()
     {
@@ -148,7 +221,31 @@ public partial class MainWindow : Window
     private Color _typePickerColor = Color.FromRgb(0xE8, 0xE8, 0xE8);
 
     private static readonly string TemplatesPath =
-        @"C:\Users\matys\Desktop\projects\nottwrite\templates";
+        System.IO.Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "nottwrite", "templates");
+
+    // First run: copy the templates shipped next to the exe into %APPDATA%.
+    private static void SeedTemplates()
+    {
+        try
+        {
+            Directory.CreateDirectory(TemplatesPath);
+            if (Directory.EnumerateDirectories(TemplatesPath).Any()) return; // already seeded
+
+            string bundled = System.IO.Path.Combine(AppContext.BaseDirectory, "templates");
+            if (!Directory.Exists(bundled)) return;
+
+            foreach (var dir in Directory.GetDirectories(bundled))
+            {
+                string dest = System.IO.Path.Combine(TemplatesPath, System.IO.Path.GetFileName(dir));
+                Directory.CreateDirectory(dest);
+                foreach (var f in Directory.GetFiles(dir, "*.json"))
+                    File.Copy(f, System.IO.Path.Combine(dest, System.IO.Path.GetFileName(f)), true);
+            }
+        }
+        catch { }
+    }
 
     private static readonly string BaseChars =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZ" +
@@ -389,7 +486,7 @@ public partial class MainWindow : Window
         if (!_resourcesReady) return;
         _letterSpacing = LetterSpacingSlider.Value;
         LetterSpacingLabel.Text = _letterSpacing.ToString("+0;-0;0") + "px";
-        RefreshGeneratedText();
+        InvalidateLayout(); RefreshGeneratedText();
     }
 
     private void WordSpacingSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -397,7 +494,7 @@ public partial class MainWindow : Window
         if (!_resourcesReady) return;
         _wordSpacing = WordSpacingSlider.Value;
         WordSpacingLabel.Text = _wordSpacing.ToString("+0;-0;0") + "px";
-        RefreshGeneratedText();
+        InvalidateLayout(); RefreshGeneratedText();
     }
 
     private void LineHeightSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -405,7 +502,7 @@ public partial class MainWindow : Window
         if (!_resourcesReady) return;
         _lineHeightMult = LineHeightSlider.Value;
         LineHeightLabel.Text = _lineHeightMult.ToString("0.0") + "×";
-        RefreshGeneratedText();
+        InvalidateLayout(); RefreshGeneratedText();
     }
 
     private void GenStrokeWidthSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
@@ -497,6 +594,8 @@ public partial class MainWindow : Window
     {
         InitializeComponent();
         _hk.Load();
+        LoadSettings();   // theme + tilt + autosave from settings.json
+        Loaded += (_, _) => { ApplyTheme(_currentThemeId); StartAutoSaveTimer(); MaybeShowOnboarding(); };
 
         Resources["StrokeBrush"]       = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
         Resources["LoadedStrokeBrush"] = new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6));
@@ -505,6 +604,7 @@ public partial class MainWindow : Window
 
         LoadCustomChars();
         LoadPenSettings();
+        SeedTemplates();
         RefreshTemplateComboBox(CurrentTemplate);
 
         Closing += (_, _) => SavePenSettings();
@@ -548,7 +648,8 @@ public partial class MainWindow : Window
 
             AlphabetScrollViewer.SizeChanged += (_, _) => UpdateAlphabetGridHeight();
             UpdateDefaultStar();
-            SwitchMode(AppMode.Edit);
+            UpdateAlphabetProgress();   // seed the global glyph counter
+            SwitchMode(AppMode.Notes);
         };
 
         CreateCharacterGrid();
@@ -592,12 +693,28 @@ public partial class MainWindow : Window
         if (_editCharColors.TryGetValue(_editActiveChar, out var cc))
             data.Color = $"#{cc.R:X2}{cc.G:X2}{cc.B:X2}";
         foreach (var s in _strokes)
-            data.Strokes.Add(new Stroke { Points = s.Select(p => new PointData { X = p.X, Y = p.Y }).ToList() });
+        {
+            _pressureByStroke.TryGetValue(s, out var pr);
+            data.Strokes.Add(new Stroke
+            {
+                Points = s.Select((p, i) => new PointData
+                {
+                    X = p.X, Y = p.Y,
+                    Pressure = pr != null && i < pr.Count ? pr[i] : 1.0,
+                }).ToList()
+            });
+        }
         File.WriteAllText(path, JsonSerializer.Serialize(data));
         _charCache[_editActiveChar] = (_strokes.Select(s => s.ToList()).ToList(), GridCellW, GridCellH);
+        _charPressures[_editActiveChar] = _strokes
+            .Select(s => _pressureByStroke.TryGetValue(s, out var pr)
+                ? new List<double>(pr)
+                : Enumerable.Repeat(1.0, s.Count).ToList())
+            .ToList();
         _strokeDataCache.Remove(path);
         _hasUnsavedChanges = false;
         UpdateAlphabetProgress();
+        FontPreviewCanvas?.InvalidateVisual();
     }
 
     private void LoadEditActiveChar()
@@ -609,9 +726,17 @@ public partial class MainWindow : Window
         var data = JsonSerializer.Deserialize<StrokeData>(File.ReadAllText(path));
         if (data == null || data.Width <= 0 || data.Height <= 0) return;
         double sx = GridCellW / data.Width, sy = GridCellH / data.Height;
+        var charPr = new List<List<double>>();
         foreach (var s in data.Strokes)
-            _strokes.Add(s.Points.Select(p => new Point(p.X * sx, p.Y * sy)).ToList());
+        {
+            var pts = s.Points.Select(p => new Point(p.X * sx, p.Y * sy)).ToList();
+            var pr  = s.Points.Select(p => p.Pressure).ToList();
+            _strokes.Add(pts);
+            _pressureByStroke[pts] = pr;
+            charPr.Add(pr);
+        }
         _charCache[_editActiveChar] = (_strokes.Select(s => s.ToList()).ToList(), GridCellW, GridCellH);
+        _charPressures[_editActiveChar] = charPr;
         // Load per-char color from JSON
         if (data.Color != null && TryParseHexColor(data.Color, out var c))
             _editCharColors[_editActiveChar] = c;
@@ -651,149 +776,6 @@ public partial class MainWindow : Window
 
     private void EditCharColorSwatch_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) { }
 
-    // ── Inline color picker handlers ──────────────────────────────────
-    private void InlineSvCanvas_Paint(object sender, SKPaintSurfaceEventArgs e)
-    {
-        var cv = e.Surface.Canvas; float w = e.Info.Width, h = e.Info.Height;
-        var (pr, pg, pb) = CpHsvToRgb(_cpHue, 1f, 1f);
-        using var hSh = SKShader.CreateLinearGradient(new SKPoint(0,0), new SKPoint(w,0),
-            new[]{SKColors.White, new SKColor(pr,pg,pb)}, null, SKShaderTileMode.Clamp);
-        cv.DrawRect(0,0,w,h, new SKPaint{Shader=hSh, IsAntialias=true});
-        using var vSh = SKShader.CreateLinearGradient(new SKPoint(0,0), new SKPoint(0,h),
-            new[]{SKColors.Transparent, SKColors.Black}, null, SKShaderTileMode.Clamp);
-        cv.DrawRect(0,0,w,h, new SKPaint{Shader=vSh, IsAntialias=true});
-        float cx = _cpSat*w, cy = (1f-_cpVal)*h;
-        cv.DrawCircle(cx,cy,6, new SKPaint{Color=SKColors.Black, Style=SKPaintStyle.Stroke, StrokeWidth=2f, IsAntialias=true});
-        cv.DrawCircle(cx,cy,6, new SKPaint{Color=SKColors.White, Style=SKPaintStyle.Stroke, StrokeWidth=1.2f, IsAntialias=true});
-    }
-
-    private void InlineHueCanvas_Paint(object sender, SKPaintSurfaceEventArgs e)
-    {
-        var cv = e.Surface.Canvas; float w = e.Info.Width, h = e.Info.Height;
-        var cols = new SKColor[]{new(255,0,0),new(255,255,0),new(0,255,0),new(0,255,255),new(0,0,255),new(255,0,255),new(255,0,0)};
-        var pos  = new float[]{0f,1f/6,2f/6,3f/6,4f/6,5f/6,1f};
-        using var sh = SKShader.CreateLinearGradient(new SKPoint(0,0), new SKPoint(0,h), cols, pos, SKShaderTileMode.Clamp);
-        cv.DrawRect(0,0,w,h, new SKPaint{Shader=sh, IsAntialias=true});
-        float y = (_cpHue/360f)*h;
-        cv.DrawLine(0,y,w,y, new SKPaint{Color=SKColors.White, StrokeWidth=2, Style=SKPaintStyle.Stroke, IsAntialias=true});
-        cv.DrawLine(0,y,w,y, new SKPaint{Color=SKColors.Black, StrokeWidth=0.8f, Style=SKPaintStyle.Stroke, IsAntialias=true});
-    }
-
-    private void InlineSvInput_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    { _cpDraggingSv=true; InlineSvInput.CaptureMouse(); CpApplySv(e.GetPosition(InlineSvInput)); }
-    private void InlineSvInput_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-    { if(_cpDraggingSv) CpApplySv(e.GetPosition(InlineSvInput)); }
-    private void InlineSvInput_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    { _cpDraggingSv=false; InlineSvInput.ReleaseMouseCapture(); SaveEditActiveCharColor(); }
-
-    private void InlineHueInput_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    { _cpDraggingHue=true; InlineHueInput.CaptureMouse(); CpApplyHue(e.GetPosition(InlineHueInput)); }
-    private void InlineHueInput_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
-    { if(_cpDraggingHue) CpApplyHue(e.GetPosition(InlineHueInput)); }
-    private void InlineHueInput_MouseUp(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    { _cpDraggingHue=false; InlineHueInput.ReleaseMouseCapture(); SaveEditActiveCharColor(); }
-
-    private void CpApplySv(Point p)
-    {
-        _cpSat = (float)Math.Clamp(p.X / InlineSvInput.ActualWidth,  0, 1);
-        _cpVal = (float)Math.Clamp(1 - p.Y / InlineSvInput.ActualHeight, 0, 1);
-        CpCommit();
-    }
-
-    private void CpApplyHue(Point p)
-    {
-        _cpHue = (float)Math.Clamp(p.Y / InlineHueInput.ActualHeight * 360, 0, 359.99f);
-        CpCommit();
-    }
-
-    private void InlineRgbInput_Changed(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_cpUpdating) return;
-        if (byte.TryParse(InlineRInput.Text, out byte r) &&
-            byte.TryParse(InlineGInput.Text, out byte g) &&
-            byte.TryParse(InlineBInput.Text, out byte b))
-        {
-            var (h, s, v) = CpRgbToHsv(System.Windows.Media.Color.FromRgb(r, g, b));
-            _cpHue=h; _cpSat=s; _cpVal=v;
-            CpCommit(skipRgb: true);
-        }
-    }
-
-    private void InlineHexInput_Changed(object sender, System.Windows.Controls.TextChangedEventArgs e)
-    {
-        if (_cpUpdating) return;
-        string raw = InlineHexInput.Text.TrimStart('#');
-        if (raw.Length == 6)
-        {
-            try
-            {
-                byte r = Convert.ToByte(raw[..2], 16);
-                byte g = Convert.ToByte(raw[2..4], 16);
-                byte b = Convert.ToByte(raw[4..6], 16);
-                var (h, s, v) = CpRgbToHsv(System.Windows.Media.Color.FromRgb(r, g, b));
-                _cpHue=h; _cpSat=s; _cpVal=v;
-                CpCommit(skipHex: true);
-            }
-            catch { }
-        }
-    }
-
-    private void CpCommit(bool skipRgb = false, bool skipHex = false)
-    {
-        var (r, g, b) = CpHsvToRgb(_cpHue, _cpSat, _cpVal);
-        var col = System.Windows.Media.Color.FromRgb(r, g, b);
-        _editCharColors[_editActiveChar] = col;
-        if (EditCharColorSwatch != null) EditCharColorSwatch.Background = new SolidColorBrush(col);
-        if (InlineColorPreview  != null) InlineColorPreview.Background  = new SolidColorBrush(col);
-        InlineSvCanvas?.InvalidateVisual();
-        InlineHueCanvas?.InvalidateVisual();
-        CpSyncInputs(skipRgb, skipHex);
-        AlphabetEditCanvas?.InvalidateVisual();
-    }
-
-    private void CpSyncInputs(bool skipRgb = false, bool skipHex = false)
-    {
-        if (InlineRInput == null) return;
-        _cpUpdating = true;
-        var (r, g, b) = CpHsvToRgb(_cpHue, _cpSat, _cpVal);
-        if (!skipRgb)
-        {
-            InlineRInput.Text = r.ToString();
-            InlineGInput.Text = g.ToString();
-            InlineBInput.Text = b.ToString();
-        }
-        if (!skipHex) InlineHexInput.Text = $"#{r:X2}{g:X2}{b:X2}";
-        _cpUpdating = false;
-    }
-
-    private static (byte r, byte g, byte b) CpHsvToRgb(float h, float s, float v)
-    {
-        h = ((h % 360f) + 360f) % 360f;
-        float c = v * s, x = c * (1f - Math.Abs((h / 60f) % 2f - 1f)), m = v - c;
-        float rf, gf, bf;
-        if      (h < 60)  { rf=c; gf=x; bf=0; }
-        else if (h < 120) { rf=x; gf=c; bf=0; }
-        else if (h < 180) { rf=0; gf=c; bf=x; }
-        else if (h < 240) { rf=0; gf=x; bf=c; }
-        else if (h < 300) { rf=x; gf=0; bf=c; }
-        else              { rf=c; gf=0; bf=x; }
-        return ((byte)((rf+m)*255), (byte)((gf+m)*255), (byte)((bf+m)*255));
-    }
-
-    private static (float h, float s, float v) CpRgbToHsv(System.Windows.Media.Color c)
-    {
-        float r = c.R/255f, g = c.G/255f, b = c.B/255f;
-        float max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b));
-        float delta = max - min, v = max, s = max < 0.0001f ? 0f : delta / max, h = 0f;
-        if (delta > 0.0001f)
-        {
-            if      (max == r) h = 60f * (((g - b) / delta) % 6f);
-            else if (max == g) h = 60f * (((b - r) / delta) + 2f);
-            else               h = 60f * (((r - g) / delta) + 4f);
-            if (h < 0f) h += 360f;
-        }
-        return (h, s, v);
-    }
 
     private void SaveEditActiveCharColor()
     {
@@ -858,14 +840,18 @@ public partial class MainWindow : Window
 
         // strokes
         List<List<Point>>? strokes = null;
+        List<List<double>>? pressures = null;
         double fileW = GridCellW, fileH = GridCellH;
         if (c == _editActiveChar)
         {
             strokes = _strokes; fileW = GridCellW; fileH = GridCellH;
+            pressures = _strokes.Select(s => _pressureByStroke.TryGetValue(s, out var pr) ? pr : null!)
+                                .ToList();
         }
         else if (_charCache.TryGetValue(c, out var cached))
         {
             strokes = cached.strokes; fileW = cached.fileW; fileH = cached.fileH;
+            _charPressures.TryGetValue(c, out pressures);
         }
 
         if (strokes != null)
@@ -881,24 +867,28 @@ public partial class MainWindow : Window
                 col = new SKColor(0xD0, 0xD0, 0xD0, alpha);
             float maxW = (float)(_strokeWidth + _taperAmount) * (sx + sy) * 0.5f;
             maxW = Math.Max(0.8f, Math.Min(maxW, 12f));
-            foreach (var stroke in strokes)
+            for (int si = 0; si < strokes.Count; si++)
             {
+                var stroke = strokes[si];
                 if (stroke.Count == 0) continue;
                 var pts = stroke.Select(p => new Point(p.X * sx + cx, p.Y * sy + cy)).ToList();
-                RenderGridStroke(canvas, pts, col, maxW);
+                var pr = pressures != null && si < pressures.Count ? pressures[si] : null;
+                RenderGridStroke(canvas, pts, col, maxW, pr);
             }
         }
     }
 
-    private void RenderGridStroke(SKCanvas canvas, IList<Point> pts, SKColor color, float maxW)
+    private void RenderGridStroke(SKCanvas canvas, IList<Point> pts, SKColor color, float maxW,
+        IList<double>? pressures = null)
     {
         int n = pts.Count;
         if (n == 0) return;
-        using var paint = new SKPaint { Color = color, IsAntialias = true, Style = SKPaintStyle.Fill };
+        _sharedFillPaint.Color = color;   // reuse pooled paint — no alloc
 
         if (n == 1)
         {
-            canvas.DrawCircle((float)pts[0].X, (float)pts[0].Y, maxW * 0.5f, paint);
+            float r = maxW * 0.5f * (pressures is { Count: > 0 } ? (float)pressures[0] : 1f);
+            canvas.DrawCircle((float)pts[0].X, (float)pts[0].Y, r, _sharedFillPaint);
             return;
         }
 
@@ -923,6 +913,7 @@ public partial class MainWindow : Window
             float taperFactor = _taperEnabled ? (float)Math.Sin(Math.PI * t) : 1f;
             float roundFactor = (float)(1.0 - _tipRoundness * (1.0 - Math.Sin(Math.PI * t)));
             float hw = baseHw * (_taperEnabled ? taperFactor : (_tipRoundness > 0 ? roundFactor : 1f));
+            if (pressures != null && i < pressures.Count) hw *= (float)pressures[i];   // pen pressure
             if (hw < 0.35f) hw = 0.35f;
 
             if (_brushShape == BrushShape.Flat)
@@ -964,9 +955,60 @@ public partial class MainWindow : Window
         path.MoveTo(left[0]);
         AddCatmullRomToPath(path, left);
         path.LineTo(right[n-1]);
-        AddCatmullRomToPath(path, right.AsEnumerable().Reverse().ToArray());
+        AddCatmullRomToPathReversed(path, right);
         path.Close();
-        canvas.DrawPath(path, paint);
+        canvas.DrawPath(path, _sharedFillPaint);
+    }
+
+    // ── Live font preview (pangram from current template glyphs) ──
+    private const string PreviewText = "The quick brown fox";
+
+    private void FontPreviewCanvas_PaintSurface(object sender, SKPaintSurfaceEventArgs e)
+    {
+        var canvas = e.Surface.Canvas;
+        float w = e.Info.Width, h = e.Info.Height;
+        canvas.Clear(GetSkColor("CanvasBg", new SKColor(0x14, 0x14, 0x14)));
+        if (_typeFontName != null) return;   // system font — preview is its own renderer; skip
+
+        // measure: lay glyphs in natural units (height = 100)
+        const double targetH = 100;
+        double pad = 10;
+        var glyphs = new List<(StrokeData sd, double x, double gscale)>();
+        double cursor = 0;
+        foreach (char ch in PreviewText)
+        {
+            if (ch == ' ') { cursor += targetH * 0.34; continue; }
+            var variants = GetAllVariantPaths(ch);
+            if (variants.Count == 0) { cursor += targetH * 0.34; continue; }
+            var sd = GetStrokeDataCached(variants[0]);
+            if (sd == null || sd.Height < 1) { cursor += targetH * 0.34; continue; }
+            double gscale = targetH / sd.Height;
+            glyphs.Add((sd, cursor, gscale));
+            cursor += sd.Width * gscale + targetH * 0.06;
+        }
+        if (glyphs.Count == 0) return;
+
+        double totalW = cursor;
+        // fit to canvas (uniform scale), centre vertically
+        double S = Math.Min((w - pad * 2) / totalW, (h - pad) / targetH);
+        double ox = pad + ((w - pad * 2) - totalW * S) / 2;
+        double oy = (h - targetH * S) / 2;
+
+        var col = GetSkColor("StrokeBrush", new SKColor(0xE8, 0xE8, 0xE8));
+        float maxW = Math.Max(0.8f, (float)(_genStrokeWidth * S * 0.9));
+
+        foreach (var (sd, gx, gscale) in glyphs)
+        {
+            foreach (var stroke in sd.Strokes)
+            {
+                if (stroke.Points.Count == 0) continue;
+                var pts = stroke.Points
+                    .Select(p => new Point(ox + (gx + p.X * gscale) * S, oy + p.Y * gscale * S))
+                    .ToList();
+                var pr = stroke.Points.Select(p => p.Pressure).ToList();
+                RenderGridStroke(canvas, pts, col, maxW, pr);
+            }
+        }
     }
 
     private void BrushPreviewCanvas_PaintSurface(object sender, SKPaintSurfaceEventArgs e)
@@ -1032,6 +1074,7 @@ public partial class MainWindow : Window
         var localPt = new Point(pos.X - cx, pos.Y - cy);
         _editCurrentStroke = [localPt];
         _strokes.Add(_editCurrentStroke);
+        _pressureByStroke[_editCurrentStroke] = [CurrentInputPressure];
         AlphabetInputCanvas.CaptureMouse();
         AlphabetEditCanvas.InvalidateVisual();
     }
@@ -1041,6 +1084,7 @@ public partial class MainWindow : Window
         if (!_isDrawingOnGrid || _editCurrentStroke == null) return;
         var pos = e.GetPosition(AlphabetInputCanvas);
         _editCurrentStroke.Add(new Point(pos.X - _editCellOrigin.X, pos.Y - _editCellOrigin.Y));
+        if (_pressureByStroke.TryGetValue(_editCurrentStroke, out var pr)) pr.Add(CurrentInputPressure);
         AlphabetEditCanvas.InvalidateVisual();
     }
 
@@ -1056,6 +1100,10 @@ public partial class MainWindow : Window
             {
                 var smoothed = _editCurrentStroke;
                 for (int i = 0; i < _smoothingPasses; i++) smoothed = SmoothStroke(smoothed);
+                // carry pressure across smoothing (count preserved); re-key the dict
+                if (_pressureByStroke.Remove(_editCurrentStroke, out var oldPr))
+                    _pressureByStroke[smoothed] = oldPr.Count == smoothed.Count
+                        ? oldPr : Enumerable.Repeat(1.0, smoothed.Count).ToList();
                 _strokes[idx] = smoothed;
                 _editCurrentStroke = smoothed;
             }
@@ -1390,49 +1438,112 @@ public partial class MainWindow : Window
         var k = e.Key == System.Windows.Input.Key.System ? e.SystemKey : e.Key;
         var m = System.Windows.Input.Keyboard.Modifiers;
 
+        bool shift = (m & System.Windows.Input.ModifierKeys.Shift) != 0;
+        bool ctrl  = (m & System.Windows.Input.ModifierKeys.Control) != 0;
+
         switch (k)
         {
             case System.Windows.Input.Key.Back:
-                if (_typeCursor > 0) { PushUndo(); _typeChars.RemoveAt(_typeCursor - 1); _typeCursor--; }
-                e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
+                if (HasSelection) { DeleteSelection(); }
+                else if (_typeCursor > 0) { PushUndo(); _typeChars.RemoveAt(_typeCursor - 1); _typeCursor--; InvalidateLayout(); }
+                e.Handled = true; ClearSel(); ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
 
             case System.Windows.Input.Key.Delete:
-                if (_typeCursor < _typeChars.Count) { PushUndo(); _typeChars.RemoveAt(_typeCursor); }
-                e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); break;
+                if (HasSelection) { DeleteSelection(); }
+                else if (_typeCursor < _typeChars.Count) { PushUndo(); _typeChars.RemoveAt(_typeCursor); InvalidateLayout(); }
+                e.Handled = true; ClearSel(); ResetCursorBlink(); RefreshGeneratedText(); break;
 
             case System.Windows.Input.Key.Left:
-                if (_typeCursor > 0) _typeCursor--;
+                if (!shift && HasSelection) { _typeCursor = SelFrom; ClearSel(); }
+                else { if (shift && !HasSelection) _selAnchor = _typeCursor; if (_typeCursor > 0) _typeCursor--; if (shift && _selAnchor == _typeCursor) ClearSel(); }
                 e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
 
             case System.Windows.Input.Key.Right:
-                if (_typeCursor < _typeChars.Count) _typeCursor++;
+                if (!shift && HasSelection) { _typeCursor = SelTo; ClearSel(); }
+                else { if (shift && !HasSelection) _selAnchor = _typeCursor; if (_typeCursor < _typeChars.Count) _typeCursor++; if (shift && _selAnchor == _typeCursor) ClearSel(); }
                 e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
 
             case System.Windows.Input.Key.Home:
+                if (shift && !HasSelection) _selAnchor = _typeCursor;
                 while (_typeCursor > 0 && _typeChars[_typeCursor - 1].Ch != '\n') _typeCursor--;
+                if (shift && _selAnchor == _typeCursor) ClearSel();
+                if (!shift) ClearSel();
                 e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
 
             case System.Windows.Input.Key.End:
+                if (shift && !HasSelection) _selAnchor = _typeCursor;
                 while (_typeCursor < _typeChars.Count && _typeChars[_typeCursor].Ch != '\n') _typeCursor++;
+                if (shift && _selAnchor == _typeCursor) ClearSel();
+                if (!shift) ClearSel();
                 e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
 
             case System.Windows.Input.Key.Space:
                 InsertChar(' ');
-                e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); ScrollToCursor(); break;
+                e.Handled = true; break;
 
             case System.Windows.Input.Key.Return:
                 InsertChar('\n');
-                e.Handled = true; ScrollToCursor(); break;
+                e.Handled = true; break;
+
+            case System.Windows.Input.Key.A when ctrl:
+                _selAnchor = 0; _typeCursor = _typeChars.Count;
+                e.Handled = true; ResetCursorBlink(); RefreshGeneratedText(); break;
+
+            case System.Windows.Input.Key.C when ctrl:
+                if (HasSelection)
+                    System.Windows.Clipboard.SetText(GetSelectedText());
+                e.Handled = true; break;
+
+            case System.Windows.Input.Key.X when ctrl:
+                if (HasSelection)
+                {
+                    System.Windows.Clipboard.SetText(GetSelectedText());
+                    DeleteSelection();
+                    RefreshGeneratedText();
+                }
+                e.Handled = true; break;
+
+            case System.Windows.Input.Key.V when ctrl:
+                var pasted = System.Windows.Clipboard.GetText();
+                if (!string.IsNullOrEmpty(pasted))
+                    foreach (char pc in pasted) InsertChar(pc);
+                e.Handled = true; break;
+
+            case System.Windows.Input.Key.S when ctrl:
+                // save current note (override template-save hotkey in Type mode)
+                if (_currentNoteId != null)
+                {
+                    _tabSnapshots[_currentNoteId] = _typeChars.Select(ToSerial).ToList();
+                    AutoSaveCurrentNote();
+                    ShowToast("Note saved", ToastKind.Success);
+                }
+                e.Handled = true; break;
 
             default:
-                if (_hk.Matches("Bold",   k, m)) { BoldToggle();   e.Handled = true; break; }
-                if (_hk.Matches("Italic", k, m)) { ItalicToggle(); e.Handled = true; break; }
+                if (_hk.Matches("Bold",   k, m))
+                {
+                    if (HasSelection) ApplyFormatToSelection(cd => cd with { Bold = !cd.Bold });
+                    else BoldToggle();
+                    e.Handled = true; break;
+                }
+                if (_hk.Matches("Italic", k, m))
+                {
+                    if (HasSelection) ApplyFormatToSelection(cd => cd with { Italic = !cd.Italic });
+                    else ItalicToggle();
+                    e.Handled = true; break;
+                }
+                if (k == System.Windows.Input.Key.U && ctrl)
+                {
+                    if (HasSelection) ApplyFormatToSelection(cd => cd with { Underline = !cd.Underline });
+                    else UnderlineToggle();
+                    e.Handled = true; break;
+                }
                 if (_hk.Matches("Undo",   k, m) && _undoStack.Count > 0)
                 {
                     _redoTypeStack.Push((_typeChars.ToList(), _typeCursor));
                     var (uc, ucur) = _undoStack.Pop();
                     _typeChars = uc; _typeCursor = Math.Clamp(ucur, 0, uc.Count);
-                    e.Handled = true; ResetCursorBlink(); RefreshGeneratedText();
+                    e.Handled = true; InvalidateLayout(); ResetCursorBlink(); RefreshGeneratedText();
                     break;
                 }
                 if (_hk.Matches("Redo",   k, m) && _redoTypeStack.Count > 0)
@@ -1440,31 +1551,60 @@ public partial class MainWindow : Window
                     _undoStack.Push((_typeChars.ToList(), _typeCursor));
                     var (rc, rcur) = _redoTypeStack.Pop();
                     _typeChars = rc; _typeCursor = Math.Clamp(rcur, 0, rc.Count);
-                    e.Handled = true; ResetCursorBlink(); RefreshGeneratedText();
+                    e.Handled = true; InvalidateLayout(); ResetCursorBlink(); RefreshGeneratedText();
                     break;
                 }
                 break;
         }
     }
 
+    private void DeleteSelection()
+    {
+        if (!HasSelection) return;
+        PushUndo();
+        InvalidateLayout();
+        int from = SelFrom, to = SelTo;
+        _typeChars.RemoveRange(from, to - from);
+        _typeCursor = from;
+        ClearSel();
+    }
+
     private void InsertChar(char ch)
     {
+        if (HasSelection) DeleteSelection();
         PushUndo();
         var variants = GetAllVariantPaths(ch);
         int vi = variants.Count > 0 ? Random.Shared.Next(variants.Count) : 0;
         double rot = _randomRotation > 0 ? (Random.Shared.NextDouble() * 2 - 1) * _randomRotation : 0;
         double jit = _randomOffsetY  > 0 ? (Random.Shared.NextDouble() * 2 - 1) * _randomOffsetY  : 0;
-        // Use template char color as default if picker is still at the gray default
         var insertColor = _typePickerColor;
         if (_typePickerColor == System.Windows.Media.Color.FromRgb(0xE8, 0xE8, 0xE8) &&
             variants.Count > 0 && GetStrokeDataCached(variants[vi]) is { } sd && sd.Color != null &&
             TryParseHexColor(sd.Color, out var tc))
             insertColor = tc;
-        _typeChars.Insert(_typeCursor, new CharData(ch, _typeBold, _typeItalic, insertColor, rot, jit, vi));
+        _typeChars.Insert(_typeCursor, new CharData(ch, _typeBold, _typeItalic, insertColor, rot, jit, vi,
+            _typeUnderline, _typeStrike));
         _typeCursor++;
+        InvalidateLayout();
         ResetCursorBlink();
         RefreshGeneratedText();
         ScrollToCursor();
+    }
+
+    private void ApplyFormatToSelection(Func<CharData, CharData> transform)
+    {
+        if (!HasSelection) return;
+        PushUndo();
+        int from = SelFrom, to = SelTo;
+        for (int i = from; i < to; i++)
+            _typeChars[i] = transform(_typeChars[i]);
+        RefreshGeneratedText();
+    }
+
+    private string GetSelectedText()
+    {
+        if (!HasSelection) return "";
+        return new string(_typeChars.Skip(SelFrom).Take(SelTo - SelFrom).Select(c => c.Ch).ToArray());
     }
 
     private void ResetCursorBlink()
@@ -1477,13 +1617,63 @@ public partial class MainWindow : Window
     private void BoldToggle()
     {
         _typeBold = !_typeBold;
-        BoldBtn.Background = _typeBold ? GetBrush("AccentBrush") : GetBrush("ButtonBg");
+        RefreshToolbarState();
     }
 
     private void ItalicToggle()
     {
         _typeItalic = !_typeItalic;
-        ItalicBtn.Background = _typeItalic ? GetBrush("AccentBrush") : GetBrush("ButtonBg");
+        RefreshToolbarState();
+    }
+
+    private void UnderlineToggle()    { _typeUnderline = !_typeUnderline; RefreshToolbarState(); RefreshGeneratedText(); }
+    private void StrikeToggle()       { _typeStrike    = !_typeStrike;    RefreshToolbarState(); RefreshGeneratedText(); }
+
+    private void AlignLeft_Click(object s, RoutedEventArgs e)    => SetAlign(TextAlign.Left);
+    private void AlignCenter_Click(object s, RoutedEventArgs e)  => SetAlign(TextAlign.Center);
+    private void AlignRight_Click(object s, RoutedEventArgs e)   => SetAlign(TextAlign.Right);
+    private void AlignJustify_Click(object s, RoutedEventArgs e) => SetAlign(TextAlign.Justify);
+
+    private void SetAlign(TextAlign a)
+    {
+        _textAlign = a;
+        InvalidateLayout();
+        RefreshToolbarState();
+        RefreshGeneratedText();
+    }
+
+    private void TbBold_Click(object s, RoutedEventArgs e)
+    { if (HasSelection) ApplyFormatToSelection(cd => cd with { Bold = !cd.Bold }); else BoldToggle(); }
+    private void TbItalic_Click(object s, RoutedEventArgs e)
+    { if (HasSelection) ApplyFormatToSelection(cd => cd with { Italic = !cd.Italic }); else ItalicToggle(); }
+    private void TbUnderline_Click(object s, RoutedEventArgs e)
+    { if (HasSelection) ApplyFormatToSelection(cd => cd with { Underline = !cd.Underline }); else UnderlineToggle(); }
+    private void TbStrike_Click(object s, RoutedEventArgs e)
+    { if (HasSelection) ApplyFormatToSelection(cd => cd with { Strikethrough = !cd.Strikethrough }); else StrikeToggle(); }
+
+    private Button? _tbBold, _tbItalic, _tbUnderline, _tbStrike;
+    private Button? _tbAlignL, _tbAlignC, _tbAlignR, _tbAlignJ;
+
+    private void RefreshToolbarState()
+    {
+        SetTbState(_tbBold,      _typeBold);
+        SetTbState(_tbItalic,    _typeItalic);
+        SetTbState(_tbUnderline, _typeUnderline);
+        SetTbState(_tbStrike,    _typeStrike);
+        SetTbState(_tbAlignL,    _textAlign == TextAlign.Left);
+        SetTbState(_tbAlignC,    _textAlign == TextAlign.Center);
+        SetTbState(_tbAlignR,    _textAlign == TextAlign.Right);
+        SetTbState(_tbAlignJ,    _textAlign == TextAlign.Justify);
+        // color bar in toolbar
+        if (TbColorBar != null)
+            TbColorBar.Background = new SolidColorBrush(_typePickerColor);
+    }
+
+    private void SetTbState(Button? btn, bool active)
+    {
+        if (btn == null) return;
+        btn.Background = active ? GetBrush("AccentBrush") : GetBrush("ButtonBg");
+        btn.Foreground = active ? GetBrush("AppBg")       : GetBrush("PrimaryText");
     }
 
     // ─── Type mode color picker ───────────────────────────────────
@@ -1499,7 +1689,11 @@ public partial class MainWindow : Window
         if (picker.ShowDialog() == true)
         {
             _typePickerColor = picker.SelectedColor;
-            TypeColorSwatch.Background = new SolidColorBrush(_typePickerColor);
+            var brush = new SolidColorBrush(_typePickerColor);
+            TypeColorSwatch.Background = brush;
+            if (TbColorBar != null) TbColorBar.Background = brush;
+            if (HasSelection)
+                ApplyFormatToSelection(cd => cd with { Color = _typePickerColor });
             RefreshGeneratedText();
         }
     }
@@ -1511,6 +1705,7 @@ public partial class MainWindow : Window
     private void UpdateProgress()
     {
         UpdateAlphabetProgress();
+        FontPreviewCanvas?.InvalidateVisual();
     }
 
     private void UpdateAlphabetProgress()
@@ -1522,6 +1717,13 @@ public partial class MainWindow : Window
             if (File.Exists(GetCharacterFilePath(c, _currentVariant)) || _charCache.ContainsKey(c)) done++;
         AlphabetProgressText.Text = $"{done}/{total} ({done * 100 / Math.Max(1, total)}%)";
         AlphabetProgressBar.Value = done * 100.0 / Math.Max(1, total);
+
+        // global indicator on the Edit nav button (always visible)
+        if (EditCountText != null) EditCountText.Text = $"{done}/{total}";
+        if (EditNavSubtitle != null)
+            EditNavSubtitle.Text = done == 0 ? "draw characters"
+                                 : done >= total ? "font complete ✓"
+                                 : $"{done} of {total} drawn";
     }
 
     private void CreateCharacterGrid()
@@ -1598,6 +1800,7 @@ public partial class MainWindow : Window
         }
 
         UpdateAlphabetProgress();
+        FontPreviewCanvas?.InvalidateVisual();
     }
 
     private void CharacterButton_Click(object sender, RoutedEventArgs e)
@@ -1752,12 +1955,12 @@ public partial class MainWindow : Window
     {
         if (_strokes.Count == 0)
         {
-            MessageBox.Show("Draw a letter first");
+            ShowToast("Draw a letter first", ToastKind.Warning);
             return;
         }
 
         SaveEditActiveChar();
-        MessageBox.Show($"Saved {_editActiveChar}");
+        ShowToast($"Saved character '{_editActiveChar}'", ToastKind.Success);
         CreateCharacterGrid();
     }
 
@@ -1776,12 +1979,14 @@ public partial class MainWindow : Window
     {
         _strokes.Clear();
         _redoStack.Clear();
-        _loadedStrokeCount = 0;
+        _pressureByStroke.Clear();
+        _charPressures.Remove(_editActiveChar);
         string path = GetCharacterFilePath(_editActiveChar, _currentVariant);
         if (File.Exists(path)) File.Delete(path);
         _charCache.Remove(_editActiveChar);
         AlphabetEditCanvas?.InvalidateVisual();
         UpdateAlphabetProgress();
+        FontPreviewCanvas?.InvalidateVisual();
         CreateCharacterGrid();
     }
 
@@ -1833,9 +2038,40 @@ public partial class MainWindow : Window
         var m = Keyboard.Modifiers;
         bool inTextBox = Keyboard.FocusedElement is TextBox or RichTextBox;
 
-        if (_hk.Matches("SwitchMode", k, m) && !inTextBox)
+        // Command palette (Ctrl+K) — global, works from anywhere
+        if (k == Key.K && (m & ModifierKeys.Control) != 0)
         {
-            SwitchMode(_appMode == AppMode.Edit ? AppMode.Type : AppMode.Edit);
+            ToggleCommandPalette();
+            e.Handled = true;
+            return;
+        }
+        if (CommandPaletteOverlay.Visibility == Visibility.Visible)
+        {
+            HandleCommandPaletteKey(e);
+            if (e.Handled) return;
+        }
+
+        if (_hk.Matches("SwitchMode", k, m))
+        {
+            if (inTextBox)
+            {
+                // let Tab insert a tab character in text boxes — do not intercept
+                return;
+            }
+            AppMode next = _appMode switch
+            {
+                AppMode.Notes => AppMode.Type,
+                AppMode.Type  => AppMode.Edit,
+                _             => AppMode.Notes,
+            };
+            SwitchMode(next);
+            e.Handled = true;
+            return;
+        }
+
+        if (k == Key.Escape && _appMode == AppMode.Type && _currentNoteId != null)
+        {
+            RequestCloseTab(_currentNoteId);
             e.Handled = true;
             return;
         }
@@ -1892,21 +2128,15 @@ public partial class MainWindow : Window
         return fallback;
     }
 
-    private static void SkiaTaperedStroke(SKCanvas canvas, IList<Point> pts, SKColor color, float maxW)
+    private void SkiaTaperedStroke(SKCanvas canvas, IList<Point> pts, SKColor color, float maxW)
     {
         int n = pts.Count;
         if (n == 0) return;
-
-        using var paint = new SKPaint
-        {
-            Color       = color,
-            IsAntialias = true,
-            Style       = SKPaintStyle.Fill
-        };
+        _sharedFillPaint.Color = color;
 
         if (n == 1)
         {
-            canvas.DrawCircle((float)pts[0].X, (float)pts[0].Y, maxW * 0.5f, paint);
+            canvas.DrawCircle((float)pts[0].X, (float)pts[0].Y, maxW * 0.5f, _sharedFillPaint);
             return;
         }
 
@@ -1940,10 +2170,28 @@ public partial class MainWindow : Window
         path.MoveTo(left[0]);
         AddCatmullRomToPath(path, left);
         path.LineTo(right[n-1]);
-        AddCatmullRomToPath(path, right.AsEnumerable().Reverse().ToArray());
+        AddCatmullRomToPathReversed(path, right);
         path.Close();
 
-        canvas.DrawPath(path, paint);
+        canvas.DrawPath(path, _sharedFillPaint);
+    }
+
+    // Same curve as AddCatmullRomToPath but traverses pts backward — avoids Reverse().ToArray().
+    private static void AddCatmullRomToPathReversed(SKPath path, IList<SKPoint> pts)
+    {
+        int n = pts.Count;
+        for (int i = n - 1; i >= 1; i--)
+        {
+            var p0 = pts[Math.Min(n - 1, i + 1)];
+            var p1 = pts[i];
+            var p2 = pts[i - 1];
+            var p3 = pts[Math.Max(0, i - 2)];
+            float cx1 = p1.X + (p2.X - p0.X) / 6f;
+            float cy1 = p1.Y + (p2.Y - p0.Y) / 6f;
+            float cx2 = p2.X - (p3.X - p1.X) / 6f;
+            float cy2 = p2.Y - (p3.Y - p1.Y) / 6f;
+            path.CubicTo(cx1, cy1, cx2, cy2, p2.X, p2.Y);
+        }
     }
 
     private static void AddCatmullRomToPath(SKPath path, IList<SKPoint> pts)
@@ -2062,7 +2310,7 @@ public partial class MainWindow : Window
     {
         _fontSize = e.NewValue;
         FontSizeLabel.Text = $"{_fontSize:0}px";
-        RefreshGeneratedText();
+        InvalidateLayout(); RefreshGeneratedText();
     }
 
     private void ExportMenuBtn_Click(object sender, RoutedEventArgs e) =>
@@ -2235,35 +2483,153 @@ public partial class MainWindow : Window
         return result;
     }
 
-    // ─── App mode (Edit / Type) ───────────────────────────────────
-    private enum AppMode { Edit, Type }
-    private AppMode _appMode = AppMode.Edit;
+    // ─── App mode ────────────────────────────────────────────────
+    private enum AppMode { Edit, Type, Notes }
+    private AppMode _appMode = AppMode.Notes;
 
-    private void EditModeBtn_Click(object sender, RoutedEventArgs e) => SwitchMode(AppMode.Edit);
-    private void TypeModeBtn_Click(object sender, RoutedEventArgs e) => SwitchMode(AppMode.Type);
+    private void EditModeBtn_Click(object sender, RoutedEventArgs e)  => SwitchMode(AppMode.Edit);
+    private void TypeModeBtn_Click(object sender, RoutedEventArgs e)  => SwitchMode(AppMode.Type);
+    private void NotesModeBtn_Click(object sender, RoutedEventArgs e) => SwitchMode(AppMode.Notes);
+
+    // ── Type-mode font combo ──────────────────────────────────────
+    private bool _fontComboReady = false;
+
+    private void PopulateTypeFontCombo()
+    {
+        if (_fontComboReady) return;
+        _fontComboReady = true;
+
+        TypeFontCombo.SelectionChanged -= TypeFontCombo_SelectionChanged;
+        TypeFontCombo.Items.Clear();
+
+        // --- Handwriting templates group header ---
+        TypeFontCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "── Handwriting ──",
+            IsEnabled = false,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+        });
+
+        var builtIn = new[] { "Default", "School", "Fancy", "Messy" };
+        IEnumerable<string> onDisk = Directory.Exists(TemplatesPath)
+            ? Directory.GetDirectories(TemplatesPath)
+                       .Select(System.IO.Path.GetFileName)
+                       .Where(n => n != null && !builtIn.Contains(n))
+                       .OrderBy(n => n)!
+            : Enumerable.Empty<string>();
+
+        int selectIdx = 1; // default = first template
+        int i = 1;
+        foreach (var name in builtIn.Concat(onDisk))
+        {
+            var item = new ComboBoxItem { Content = name, Tag = $"template:{name}" };
+            TypeFontCombo.Items.Add(item);
+            if (name == CurrentTemplate && _typeFontName == null) selectIdx = i;
+            i++;
+        }
+
+        // --- System fonts group header ---
+        TypeFontCombo.Items.Add(new ComboBoxItem
+        {
+            Content = "── System Fonts ──",
+            IsEnabled = false,
+            FontSize = 10,
+            Foreground = new SolidColorBrush(Color.FromRgb(0x88, 0x88, 0x88)),
+        });
+
+        var sysFonts = Fonts.SystemFontFamilies
+                            .Select(f => f.Source)
+                            .OrderBy(n => n)
+                            .ToList();
+        foreach (var name in sysFonts)
+        {
+            var item = new ComboBoxItem { Content = name, Tag = $"system:{name}" };
+            TypeFontCombo.Items.Add(item);
+            if (_typeFontName == name) selectIdx = TypeFontCombo.Items.Count - 1;
+            i++;
+        }
+
+        TypeFontCombo.SelectedIndex = selectIdx;
+        TypeFontCombo.SelectionChanged += TypeFontCombo_SelectionChanged;
+    }
+
+    // Re-select the toolbar font picker to match current state (no rebuild).
+    private void SyncTypeFontCombo()
+    {
+        if (!_fontComboReady || TypeFontCombo == null) return;
+        string want = _typeFontName != null ? $"system:{_typeFontName}" : $"template:{CurrentTemplate}";
+        TypeFontCombo.SelectionChanged -= TypeFontCombo_SelectionChanged;
+        foreach (var obj in TypeFontCombo.Items)
+            if (obj is ComboBoxItem ci && (ci.Tag as string) == want)
+            {
+                TypeFontCombo.SelectedItem = ci;
+                break;
+            }
+        TypeFontCombo.SelectionChanged += TypeFontCombo_SelectionChanged;
+    }
+
+    private void TypeFontCombo_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (TypeFontCombo.SelectedItem is not ComboBoxItem item || item.Tag is not string tag) return;
+        if (tag.StartsWith("template:"))
+        {
+            var tname = tag["template:".Length..];
+            _typeFontName = null;
+            CurrentTemplate = tname;
+            _charCache.Clear();
+            _strokeDataCache.Clear();
+            RefreshTemplateComboBox(tname);
+        }
+        else if (tag.StartsWith("system:"))
+        {
+            _typeFontName = tag["system:".Length..];
+            _cachedTfName = null; // force typeface cache rebuild
+        }
+        BindFontToCurrentNote();   // remember choice on the open note
+        InvalidateLayout();
+        RefreshGeneratedText();
+    }
 
     private void SwitchMode(AppMode mode)
     {
+        bool changed = _lastFadeMode != mode;
+        _lastFadeMode = mode;
         _appMode = mode;
-        bool isEdit = mode == AppMode.Edit;
+        bool isEdit  = mode == AppMode.Edit;
+        bool isType  = mode == AppMode.Type;
+        bool isNotes = mode == AppMode.Notes;
 
-        EditLeftPanel.Visibility = isEdit ? Visibility.Visible : Visibility.Collapsed;
-        TypeLeftPanel.Visibility = isEdit ? Visibility.Collapsed : Visibility.Visible;
-        PreviewAlphabetBtn.Visibility = isEdit ? Visibility.Visible : Visibility.Collapsed;
+        EditLeftPanel.Visibility        = isEdit  ? Visibility.Visible   : Visibility.Collapsed;
+        TypeLeftPanel.Visibility        = isType  ? Visibility.Visible   : Visibility.Collapsed;
+        NotesLeftPanel.Visibility       = isNotes ? Visibility.Visible   : Visibility.Collapsed;
+        AlphabetScrollViewer.Visibility = isEdit  ? Visibility.Visible   : Visibility.Collapsed;
+        TypeScrollViewer.Visibility     = isType  ? Visibility.Visible   : Visibility.Collapsed;
+        NotesPanel.Visibility           = isNotes ? Visibility.Visible   : Visibility.Collapsed;
+        TypeToolbar.Visibility          = isType  ? Visibility.Visible   : Visibility.Collapsed;
+        CenterPanelHeader.Visibility = isType ? Visibility.Collapsed : Visibility.Visible;
+        if (isType) PopulateTypeFontCombo();
 
-        AlphabetScrollViewer.Visibility = isEdit ? Visibility.Visible : Visibility.Collapsed;
-        TypeScrollViewer.Visibility     = isEdit ? Visibility.Collapsed : Visibility.Visible;
+        bool noteActive = isType && _currentNoteId != null;
+        NotesBackBtn.Visibility  = noteActive ? Visibility.Visible : Visibility.Collapsed;
+        NotesBackSep.Visibility  = noteActive ? Visibility.Visible : Visibility.Collapsed;
 
-        var accentBrush  = GetBrush("AccentBrush");
-        var navActiveBg  = GetBrush("NavActiveBg");
-        var transparent  = new SolidColorBrush(Colors.Transparent);
+        if (isType) RefreshTabBar();
+        else NoteTabBar.Visibility = Visibility.Collapsed;
 
-        EditModeBtn.Background    = isEdit ? navActiveBg  : transparent;
-        EditModeBtn.BorderBrush   = isEdit ? accentBrush  : transparent;
-        EditModeBtn.BorderThickness = new Thickness(3, 0, 0, 0);
-        TypeModeBtn.Background    = isEdit ? transparent  : navActiveBg;
-        TypeModeBtn.BorderBrush   = isEdit ? transparent  : accentBrush;
-        TypeModeBtn.BorderThickness = new Thickness(3, 0, 0, 0);
+        var accent      = GetBrush("AccentBrush");
+        var activeBg    = GetBrush("NavActiveBg");
+        var none        = new SolidColorBrush(Colors.Transparent);
+
+        void NavStyle(Button btn, bool active)
+        {
+            btn.Background      = active ? activeBg : none;
+            btn.BorderBrush     = active ? accent   : none;
+            btn.BorderThickness = new Thickness(3, 0, 0, 0);
+        }
+        NavStyle(NotesModeBtn, isNotes);
+        NavStyle(EditModeBtn,  isEdit);
+        NavStyle(TypeModeBtn,  isType);
 
         if (isEdit)
         {
@@ -2275,15 +2641,87 @@ public partial class MainWindow : Window
             EditActiveCharLabel.Text = _editActiveChar.ToString();
             UpdateAlphabetGridHeight();
             AlphabetEditCanvas.InvalidateVisual();
+            FontPreviewCanvas?.InvalidateVisual();
         }
-        else
+        else if (isType)
         {
             CenterPanelTitle.Text = "PAPER";
             _displayMode = DisplayMode.Text;
             StartCursorBlink();
             Keyboard.Focus(this);
+            if (_tbBold == null)
+            {
+                _tbBold      = TbBoldBtn;
+                _tbItalic    = TbItalicBtn;
+                _tbUnderline = TbUnderlineBtn;
+                _tbStrike    = TbStrikeBtn;
+                _tbAlignL    = TbAlignLBtn;
+                _tbAlignC    = TbAlignCBtn;
+                _tbAlignR    = TbAlignRBtn;
+                _tbAlignJ    = TbAlignJBtn;
+                ApplyToolbarButtonStyle(TbBoldBtn, TbItalicBtn, TbUnderlineBtn, TbStrikeBtn,
+                                        TbAlignLBtn, TbAlignCBtn, TbAlignRBtn, TbAlignJBtn);
+            }
+            RefreshToolbarState();
             RefreshGeneratedText();
         }
+        else // Notes
+        {
+            CenterPanelTitle.Text = "MY NOTES";
+            _cursorTimer?.Stop();
+            LoadNotes();
+        }
+
+        if (changed) FadeCenterContent();
+    }
+
+    private AppMode? _lastFadeMode;
+
+    private void FadeCenterContent()
+    {
+        if (CenterContent == null) return;
+        var fade = new System.Windows.Media.Animation.DoubleAnimation(0.0, 1.0,
+            TimeSpan.FromMilliseconds(150))
+        {
+            EasingFunction = new System.Windows.Media.Animation.CubicEase
+                { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut },
+        };
+        CenterContent.BeginAnimation(OpacityProperty, fade);
+    }
+
+    private void ApplyToolbarButtonStyle(params Button[] buttons)
+    {
+        foreach (var b in buttons)
+        {
+            b.Background    = GetBrush("ButtonBg");
+            b.Foreground    = GetBrush("PrimaryText");
+            b.BorderBrush   = GetBrush("AppBorderBrush");
+            b.BorderThickness = new Thickness(1);
+            b.Cursor        = Cursors.Hand;
+            b.Template      = MakeTbButtonTemplate();
+        }
+    }
+
+    private static ControlTemplate? _tbBtnTemplate;
+    private static ControlTemplate MakeTbButtonTemplate()
+    {
+        if (_tbBtnTemplate != null) return _tbBtnTemplate;
+        var tmpl = new ControlTemplate(typeof(Button));
+        var bd   = new FrameworkElementFactory(typeof(Border));
+        bd.SetValue(Border.CornerRadiusProperty, new CornerRadius(5));
+        bd.SetBinding(Border.BackgroundProperty,
+            new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        bd.SetBinding(Border.BorderBrushProperty,
+            new System.Windows.Data.Binding("BorderBrush") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        bd.SetBinding(Border.BorderThicknessProperty,
+            new System.Windows.Data.Binding("BorderThickness") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        var cp = new FrameworkElementFactory(typeof(ContentPresenter));
+        cp.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        cp.SetValue(ContentPresenter.VerticalAlignmentProperty,   VerticalAlignment.Center);
+        bd.AppendChild(cp);
+        tmpl.VisualTree = bd;
+        _tbBtnTemplate = tmpl;
+        return tmpl;
     }
 
     // ─── Generate / Preview ──────────────────────────────────────
@@ -2291,787 +2729,7 @@ public partial class MainWindow : Window
     private enum DisplayMode { None, Text, Alphabet }
     private DisplayMode _displayMode = DisplayMode.Text;
 
-    private void RefreshDisplay()
-    {
-        if (!_resourcesReady) return;
-        if (_displayMode == DisplayMode.Text)          RefreshGeneratedText();
-        else if (_displayMode == DisplayMode.Alphabet) AlphabetEditCanvas?.InvalidateVisual();
-    }
-
-    private (float paperX, float paperY, float paperW, float paperH) GetPaperBounds(float canvasW, List<CharLayout>? layout = null)
-    {
-        float paperX = Math.Max(PaperPadSide, (canvasW - _paperW) / 2f);
-        float paperY = PaperPadTop;
-        double maxY  = layout != null && layout.Count > 0 ? layout.Max(l => l.Y) : 0;
-        float paperH = Math.Max(_paperMinH, (float)(maxY + _fontSize * _lineHeightMult + PaperInnerV * 2));
-        return (paperX, paperY, _paperW, paperH);
-    }
-
-    private void RefreshGeneratedText()
-    {
-        if (!_resourcesReady || TypeSkiaCanvas == null || TypeCanvasHost == null || TypeScrollViewer == null) return;
-        _displayMode = DisplayMode.Text;
-        float canvasW = (float)(TypeScrollViewer.ActualWidth > 16 ? TypeScrollViewer.ActualWidth : 1200);
-        var layout    = LayoutTypeChars(canvasW);
-        var (_, paperY, _, paperH) = GetPaperBounds(canvasW, layout);
-        double minH   = TypeScrollViewer.ActualHeight > 0 ? TypeScrollViewer.ActualHeight : 800;
-        TypeCanvasHost.Height = Math.Max(minH, paperY + paperH + PaperPadTop);
-        TypeSkiaCanvas.InvalidateVisual();
-    }
-
-    private void GenerateButton_Click(object sender, RoutedEventArgs e) => RefreshGeneratedText();
-
-    // ─── Formatting handlers ─────────────────────────────────────
-    private void BoldBtn_Click(object sender, RoutedEventArgs e)   => BoldToggle();
-    private void ItalicBtn_Click(object sender, RoutedEventArgs e) => ItalicToggle();
-
-    private void ColorBtn_Click(object sender, RoutedEventArgs e) { /* legacy, no-op */ }
-
-    private void PreviewAlphabetButton_Click(object sender, RoutedEventArgs e)
-    {
-        _displayMode = DisplayMode.Alphabet;
-        AlphabetEditCanvas?.InvalidateVisual();
-    }
-
-    private void DrawAlphabetPreview()
-    {
-        // now rendered in AlphabetEditCanvas
-        AlphabetEditCanvas?.InvalidateVisual();
-    }
-
-    // ─── Skia Type mode rendering ─────────────────────────────────
-
-    private record struct CharLayout(CharData Cd, double X, double Y, double W);
-
-    private List<CharLayout> LayoutTypeChars(double canvasW)
-    {
-        var result = new List<CharLayout>(_typeChars.Count);
-        double targetH = _fontSize;
-        double lineH   = _fontSize * _lineHeightMult;
-        double gap     = targetH * 0.06 + _letterSpacing;
-        double spaceW  = targetH * 0.38 + _wordSpacing;
-        float  paperX  = Math.Max(PaperPadSide, ((float)canvasW - _paperW) / 2f);
-        double margin  = PaperInnerH;
-        double ox = paperX + margin, oy = 0;
-
-        int i = 0;
-        while (i < _typeChars.Count)
-        {
-            var cd = _typeChars[i];
-            double startX = paperX + margin;
-            double endX   = paperX + _paperW - margin;
-            if (cd.Ch == '\n') { result.Add(new(cd, ox, oy, 0)); i++; ox = startX; oy += lineH; continue; }
-            if (cd.Ch == ' ')  { result.Add(new(cd, ox, oy, spaceW)); i++; ox += spaceW; continue; }
-
-            int wEnd = i; double wW = 0;
-            while (wEnd < _typeChars.Count && _typeChars[wEnd].Ch != ' ' && _typeChars[wEnd].Ch != '\n')
-            { wW += MeasureCharW(_typeChars[wEnd], targetH) + gap; wEnd++; }
-            if (wW > gap) wW -= gap;
-            if (ox > startX && ox + wW > endX) { ox = startX; oy += lineH; }
-
-            for (int j = i; j < wEnd; j++)
-            {
-                double cw = MeasureCharW(_typeChars[j], targetH);
-                result.Add(new(_typeChars[j], ox, oy, cw));
-                ox += cw + gap;
-            }
-            i = wEnd;
-        }
-        return result;
-    }
-
-    private double MeasureCharW(CharData cd, double targetH)
-    {
-        if (cd.Ch == ' ' || cd.Ch == '\n') return 0;
-        var variants = GetAllVariantPaths(cd.Ch);
-        if (variants.Count == 0) return targetH * 0.4;
-        int vi = Math.Clamp(cd.VariantIdx, 0, variants.Count - 1);
-        var sd = GetStrokeDataCached(variants[vi]);
-        return sd != null && sd.Height > 0 ? sd.Width * targetH / sd.Height : targetH * 0.4;
-    }
-
-    private void TypeSkia_PaintSurface(object sender, SKPaintSurfaceEventArgs e)
-    {
-        if (!_resourcesReady) return;
-        var skCanvas = e.Surface.Canvas;
-        float fw = e.Info.Width, fh = e.Info.Height;
-
-        // desk background (darker than paper)
-        skCanvas.Clear(new SKColor(0x0D, 0x0D, 0x12));
-
-        var layout = LayoutTypeChars(fw);
-        var (paperX, paperY, paperW, paperH) = GetPaperBounds(fw, layout);
-
-        // subtle drop shadow
-        using (var shadow = new SKPaint {
-            Color = new SKColor(0, 0, 0, 80),
-            MaskFilter = SKMaskFilter.CreateBlur(SKBlurStyle.Normal, 14) })
-            skCanvas.DrawRect(paperX + 5, paperY + 5, paperW, paperH, shadow);
-
-        // paper surface
-        using (var pp = new SKPaint { Color = new SKColor(0x17, 0x17, 0x22) })
-            skCanvas.DrawRect(paperX, paperY, paperW, paperH, pp);
-
-        // paper border
-        using (var pb = new SKPaint {
-            Color = new SKColor(0x30, 0x30, 0x48),
-            Style = SKPaintStyle.Stroke, StrokeWidth = 1 })
-            skCanvas.DrawRect(paperX, paperY, paperW, paperH, pb);
-
-        // lines / dots on paper
-        if (_paperStyle != PaperStyle.Clear)
-            DrawPaperSkia(skCanvas, paperX, paperY, paperW, paperH);
-
-        double baseY    = paperY + PaperInnerV + _fontSize * (_lineHeightMult * 0.75);
-        double scaledSW = _genStrokeWidth * (_fontSize / 180.0);
-
-        foreach (var item in layout)
-        {
-            if (item.Cd.Ch == ' ' || item.Cd.Ch == '\n') continue;
-            RenderTypeCharSkia(skCanvas, item.Cd, item.X, baseY + item.Y, scaledSW);
-        }
-
-        if (_cursorVisible && _appMode == AppMode.Type)
-            DrawCursorSkia(skCanvas, layout, baseY);
-    }
-
-    private void DrawPaperSkia(SKCanvas canvas, float px, float py, float pw, float ph)
-    {
-        var lineCol = GetSkColor("NotebookLineBrush", new SKColor(0x2E, 0x2E, 0x44));
-        canvas.Save();
-        canvas.ClipRect(new SKRect(px, py, px + pw, py + ph));
-        if (_paperStyle == PaperStyle.Lines)
-        {
-            using var p = new SKPaint { Color = lineCol, StrokeWidth = (float)_lineThickness, IsAntialias = false };
-            int sp = Math.Max(10, _lineSpacing);
-            for (float y = py + sp; y <= py + ph + sp; y += sp)
-                canvas.DrawLine(px, y, px + pw, y, p);
-        }
-        else
-        {
-            using var p = new SKPaint { Color = lineCol, IsAntialias = true, Style = SKPaintStyle.Fill };
-            float sp = (float)Math.Max(4, _dotSpacing);
-            float r  = (float)Math.Max(0.3, _dotSize);
-            for (float y = py + sp; y <= py + ph + sp; y += sp)
-            for (float x = px + sp; x <= px + pw + sp; x += sp)
-                canvas.DrawCircle(x, y, r, p);
-        }
-        canvas.Restore();
-
-        // page-break dividers when paper taller than one page
-        if (ph > _paperMinH * 1.1f)
-        {
-            using var divPaint = new SKPaint
-            {
-                Color = new SKColor(0xFF, 0xFF, 0xFF, 18),
-                StrokeWidth = 1.5f,
-                PathEffect = SKPathEffect.CreateDash([8f, 6f], 0)
-            };
-            for (float divY = py + _paperMinH; divY < py + ph; divY += _paperMinH)
-                canvas.DrawLine(px + 8, divY, px + pw - 8, divY, divPaint);
-        }
-    }
-
-    private void RenderTypeCharSkia(SKCanvas canvas, CharData cd, double x, double baselineY, double scaledSW)
-    {
-        var variants = GetAllVariantPaths(cd.Ch);
-        if (variants.Count == 0) return;
-        int vi     = Math.Clamp(cd.VariantIdx, 0, variants.Count - 1);
-        var letter = GetStrokeDataCached(variants[vi]);
-        if (letter == null) return;
-
-        double scale  = letter.Height > 0 ? _fontSize / letter.Height : 1;
-        double charW  = letter.Width * scale;
-        double baseOff = baselineY - letter.Baseline * scale;
-        float  maxW   = (float)((cd.Bold ? scaledSW * 1.6 : scaledSW) + _taperAmount);
-        double rotRad = cd.RotDeg * Math.PI / 180.0;
-        double cosR   = Math.Cos(rotRad), sinR = Math.Sin(rotRad);
-        double pivotX = x + charW / 2, pivotY = baselineY;
-        var    col    = new SKColor(cd.Color.R, cd.Color.G, cd.Color.B, cd.Color.A);
-
-        foreach (var s in letter.Strokes)
-        {
-            var pts = s.Points.Select(p =>
-            {
-                double px = x + p.X * scale;
-                double py = baseOff + p.Y * scale + cd.JitterY;
-                if (cd.Italic) px += (baselineY - py) * 0.28;
-                if (cd.RotDeg != 0)
-                {
-                    double rx = px - pivotX, ry = py - pivotY;
-                    px = pivotX + rx * cosR - ry * sinR;
-                    py = pivotY + rx * sinR + ry * cosR;
-                }
-                return new Point(px, py);
-            }).ToList();
-            RenderGridStroke(canvas, pts, col, maxW);
-        }
-    }
-
-    private void DrawCursorSkia(SKCanvas canvas, List<CharLayout> layout, double baseY)
-    {
-        double gap = _fontSize * 0.06 + _letterSpacing;
-        float  startX = Math.Max(PaperPadSide, (canvas.LocalClipBounds.Width - _paperW) / 2f) + PaperInnerH;
-        Point cursorPt;
-
-        if (layout.Count == 0 || _typeCursor == 0)
-            cursorPt = new(startX, baseY);
-        else if (_typeCursor >= layout.Count)
-        {
-            var last = layout[^1];
-            cursorPt = last.Cd.Ch == '\n'
-                ? new(startX, baseY + last.Y + _fontSize * _lineHeightMult)
-                : new(last.X + last.W + gap, baseY + last.Y);
-        }
-        else
-        {
-            var cur = layout[_typeCursor];
-            bool prevNL = _typeCursor > 0 && layout[_typeCursor - 1].Cd.Ch == '\n';
-            cursorPt = prevNL ? new(startX, baseY + cur.Y) : new(cur.X, baseY + cur.Y);
-        }
-
-        float ch  = (float)(_fontSize * 0.85);
-        var   col = new SKColor(_typePickerColor.R, _typePickerColor.G, _typePickerColor.B);
-        using var paint = new SKPaint { Color = col, StrokeWidth = 1.5f, IsAntialias = true };
-        canvas.DrawLine((float)cursorPt.X, (float)(cursorPt.Y - ch * 0.82f),
-                        (float)cursorPt.X, (float)(cursorPt.Y + ch * 0.14f), paint);
-    }
-
-    private void TypeCanvas_MouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
-    {
-        var pos    = e.GetPosition(DisplayCanvas);
-        float cw   = (float)(TypeSkiaCanvas.ActualWidth > 0 ? TypeSkiaCanvas.ActualWidth : 1200);
-        var layout = LayoutTypeChars(cw);
-        var (_, paperY, _, paperH) = GetPaperBounds(cw, layout);
-        double baseY = paperY + PaperInnerV + _fontSize * (_lineHeightMult * 0.75);
-        double gap   = _fontSize * 0.06 + _letterSpacing;
-
-        int    best  = _typeChars.Count;
-        double bestD = double.MaxValue;
-
-        for (int i = 0; i < layout.Count; i++)
-        {
-            if (layout[i].Cd.Ch == '\n') continue;
-            double cy = baseY + layout[i].Y;
-            double d1 = Math.Abs(pos.X - layout[i].X) + Math.Abs(pos.Y - cy) * 0.3;
-            if (d1 < bestD) { bestD = d1; best = i; }
-            double d2 = Math.Abs(pos.X - (layout[i].X + layout[i].W + gap)) + Math.Abs(pos.Y - cy) * 0.3;
-            if (d2 < bestD) { bestD = d2; best = i + 1; }
-        }
-
-        _typeCursor = Math.Clamp(best, 0, _typeChars.Count);
-        ResetCursorBlink();
-        RefreshGeneratedText();
-        System.Windows.Input.Keyboard.Focus(this);
-    }
-
     // ─── (old WPF text rendering — replaced by Skia above) ────────
-
-    // ─── Export ──────────────────────────────────────────────────
-    private void ExportPngButton_Click(object sender, RoutedEventArgs e)
-    {
-        Directory.CreateDirectory("exports");
-        const int W = 3000;
-        var layout   = LayoutTypeChars(W);
-        double maxY  = layout.Count > 0 ? layout.Max(l => l.Y) : 0;
-        int H        = (int)Math.Max(800, maxY + _fontSize * _lineHeightMult + 80);
-
-        using var bitmap   = new SKBitmap(W, H);
-        using var skCanvas = new SKCanvas(bitmap);
-        skCanvas.Clear(SKColors.White);
-
-        double baseY    = _fontSize * (_lineHeightMult * 0.75);
-        double scaledSW = _genStrokeWidth * (_fontSize / 180.0);
-        foreach (var item in layout)
-        {
-            if (item.Cd.Ch == ' ' || item.Cd.Ch == '\n') continue;
-            var blackCd = item.Cd with { Color = Color.FromRgb(0, 0, 0) };
-            RenderTypeCharSkia(skCanvas, blackCd, item.X, baseY + item.Y, scaledSW);
-        }
-
-        using var image  = SKImage.FromBitmap(bitmap);
-        using var data   = image.Encode(SKEncodedImageFormat.Png, 100);
-        string    filePath = System.IO.Path.Combine("exports", $"{DateTime.Now:yyyyMMdd_HHmmss}.png");
-        using var stream = File.Create(filePath);
-        data.SaveTo(stream);
-
-        MessageBox.Show($"Saved PNG:\n{System.IO.Path.GetFullPath(filePath)}");
-    }
-
-    private void ExportJpgButton_Click(object sender, RoutedEventArgs e)
-    {
-        ExportPopup.IsOpen = false;
-        var dlg = new Microsoft.Win32.SaveFileDialog
-        {
-            Title = "Save as JPG",
-            Filter = "JPEG Image|*.jpg",
-            FileName = $"nottwrite_{DateTime.Now:yyyyMMdd_HHmmss}.jpg"
-        };
-        if (dlg.ShowDialog() != true) return;
-
-        const int W = 3000;
-        var layout   = LayoutTypeChars(W);
-        double maxY  = layout.Count > 0 ? layout.Max(l => l.Y) : 0;
-        int H        = (int)Math.Max(800, maxY + _fontSize * _lineHeightMult + 80);
-
-        using var bitmap   = new SKBitmap(W, H);
-        using var skCanvas = new SKCanvas(bitmap);
-        skCanvas.Clear(SKColors.White);
-
-        double baseY    = _fontSize * (_lineHeightMult * 0.75);
-        double scaledSW = _genStrokeWidth * (_fontSize / 180.0);
-        foreach (var item in layout)
-        {
-            if (item.Cd.Ch == ' ' || item.Cd.Ch == '\n') continue;
-            var blackCd = item.Cd with { Color = Color.FromRgb(0, 0, 0) };
-            RenderTypeCharSkia(skCanvas, blackCd, item.X, baseY + item.Y, scaledSW);
-        }
-
-        using var image = SKImage.FromBitmap(bitmap);
-        using var data  = image.Encode(SKEncodedImageFormat.Jpeg, 92);
-        using var stream = File.Create(dlg.FileName);
-        data.SaveTo(stream);
-        MessageBox.Show($"Saved JPG:\n{System.IO.Path.GetFullPath(dlg.FileName)}");
-    }
-
-    private void ExportPdfButton_Click(object sender, RoutedEventArgs e)
-    {
-        ExportPopup.IsOpen = false;
-        var dlg = new Microsoft.Win32.SaveFileDialog
-        {
-            Title      = "Save As PDF",
-            FileName   = $"nottwrite_{DateTime.Now:yyyyMMdd_HHmmss}.pdf",
-            DefaultExt = ".pdf",
-            Filter     = "PDF File (*.pdf)|*.pdf"
-        };
-        if (dlg.ShowDialog() != true) return;
-
-        float pdfW  = _paperW + PaperPadSide * 2;
-        var layout  = LayoutTypeChars(pdfW);
-        var (paperX, paperY, paperW, paperH) = GetPaperBounds(pdfW, layout);
-        float pdfH  = paperY + paperH + PaperPadTop;
-
-        using var stream = File.Create(dlg.FileName);
-        using var doc    = SKDocument.CreatePdf(stream);
-        using var canvas = doc.BeginPage(pdfW, pdfH);
-
-        canvas.Clear(new SKColor(0x0D, 0x0D, 0x12));
-        using (var pp = new SKPaint { Color = new SKColor(0x17, 0x17, 0x22) })
-            canvas.DrawRect(paperX, paperY, paperW, paperH, pp);
-        if (_paperStyle != PaperStyle.Clear)
-            DrawPaperSkia(canvas, paperX, paperY, paperW, paperH);
-
-        double baseY    = paperY + PaperInnerV + _fontSize * (_lineHeightMult * 0.75);
-        double scaledSW = _genStrokeWidth * (_fontSize / 180.0);
-        foreach (var item in layout)
-        {
-            if (item.Cd.Ch == ' ' || item.Cd.Ch == '\n') continue;
-            RenderTypeCharSkia(canvas, item.Cd, item.X, baseY + item.Y, scaledSW);
-        }
-
-        doc.EndPage();
-        doc.Close();
-        MessageBox.Show($"Saved PDF:\n{dlg.FileName}");
-    }
-
-    private void ExportSvgButton_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new Microsoft.Win32.SaveFileDialog
-        {
-            Title      = "Export SVG",
-            FileName   = $"{CurrentTemplate}_{DateTime.Now:yyyyMMdd_HHmmss}.svg",
-            DefaultExt = ".svg",
-            Filter     = "SVG File (*.svg)|*.svg"
-        };
-        if (dlg.ShowDialog() != true) return;
-
-        string svg = _appMode == AppMode.Type ? BuildTypedTextSvg() : BuildSpecimenSvg();
-        File.WriteAllText(dlg.FileName, svg, System.Text.Encoding.UTF8);
-        MessageBox.Show($"Saved SVG:\n{dlg.FileName}");
-    }
-
-    private string BuildTypedTextSvg()
-    {
-        const double W = 1200;
-        var layout  = LayoutTypeChars(W);
-        double baseY   = _fontSize * (_lineHeightMult * 0.75);
-        double maxY    = layout.Count > 0 ? layout.Max(l => l.Y) : 0;
-        double H       = Math.Max(400, maxY + _fontSize * _lineHeightMult + 80);
-        double scaledSW = _genStrokeWidth * (_fontSize / 180.0);
-
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.AppendLine($"<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 {W:F1} {H:F1}\" width=\"{W:F1}\" height=\"{H:F1}\">");
-
-        foreach (var item in layout)
-        {
-            if (item.Cd.Ch == ' ' || item.Cd.Ch == '\n') continue;
-            var variants = GetAllVariantPaths(item.Cd.Ch);
-            if (variants.Count == 0) continue;
-            int vi   = Math.Clamp(item.Cd.VariantIdx, 0, variants.Count - 1);
-            var data = GetStrokeDataCached(variants[vi]);
-            if (data == null) continue;
-
-            double scale   = data.Height > 0 ? _fontSize / data.Height : 1;
-            double baseOff = baseY + item.Y - data.Baseline * scale;
-            double thick   = item.Cd.Bold ? scaledSW * 1.6 : scaledSW;
-            string col     = $"#{item.Cd.Color.R:X2}{item.Cd.Color.G:X2}{item.Cd.Color.B:X2}";
-
-            foreach (var stroke in data.Strokes)
-            {
-                if (stroke.Points.Count < 2) continue;
-                var pts = stroke.Points.Select(p =>
-                {
-                    double px = item.X + p.X * scale;
-                    double py = baseOff + p.Y * scale + item.Cd.JitterY;
-                    if (item.Cd.Italic) px += (baseY + item.Y - py) * 0.28;
-                    return $"{px:F2},{py:F2}";
-                });
-                sb.AppendLine($"  <polyline points=\"{string.Join(" ", pts)}\" stroke=\"{col}\" stroke-width=\"{thick:F2}\" fill=\"none\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
-            }
-        }
-
-        sb.AppendLine("</svg>");
-        return sb.ToString();
-    }
-
-    private string BuildSpecimenSvg()
-    {
-        const double cellW      = 160;
-        const double cellH      = 180;
-        const double charHeight = 120;
-        const double padding    = 20;
-        const int    cols       = 10;
-        const double labelH     = 20;
-
-        var chars = AllChars.Where(c => File.Exists(GetCharacterFilePath(c, 1))).ToList();
-        int rows  = (int)Math.Ceiling(chars.Count / (double)cols);
-
-        double svgW = cols * cellW + padding * 2;
-        double svgH = rows * cellH + padding * 2 + 40;
-
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine("<?xml version=\"1.0\" encoding=\"UTF-8\"?>");
-        sb.AppendLine($"<svg xmlns=\"http://www.w3.org/2000/svg\" " +
-                      $"viewBox=\"0 0 {svgW:F1} {svgH:F1}\" " +
-                      $"width=\"{svgW:F1}\" height=\"{svgH:F1}\">");
-        sb.AppendLine($"  <title>{CurrentTemplate} — Handwriting Font Specimen</title>");
-        sb.AppendLine($"  <rect width=\"{svgW:F1}\" height=\"{svgH:F1}\" fill=\"#1a1a1a\"/>");
-
-        sb.AppendLine($"  <text x=\"{padding}\" y=\"{padding + 24}\" " +
-                      $"font-family=\"monospace\" font-size=\"18\" font-weight=\"bold\" fill=\"#569CD6\">" +
-                      $"{EscapeXml(CurrentTemplate)}</text>");
-        sb.AppendLine($"  <text x=\"{svgW - padding}\" y=\"{padding + 24}\" " +
-                      $"font-family=\"monospace\" font-size=\"11\" fill=\"#666\" text-anchor=\"end\">" +
-                      $"{chars.Count} characters · exported {DateTime.Now:yyyy-MM-dd}</text>");
-
-        double startY = padding + 40;
-
-        for (int i = 0; i < chars.Count; i++)
-        {
-            int col = i % cols;
-            int row = i / cols;
-            double cellX = padding + col * cellW;
-            double cellY = startY + row * cellH;
-
-            char c = chars[i];
-            string? paths = CharToSvgPaths(c, cellX, cellY + labelH, cellW, charHeight);
-            if (paths == null) continue;
-
-            sb.AppendLine($"  <rect x=\"{cellX:F1}\" y=\"{cellY:F1}\" " +
-                          $"width=\"{cellW:F1}\" height=\"{cellH:F1}\" " +
-                          $"fill=\"#252526\" rx=\"4\"/>");
-
-            sb.AppendLine($"  <text x=\"{cellX + 8:F1}\" y=\"{cellY + 15:F1}\" " +
-                          $"font-family=\"monospace\" font-size=\"11\" fill=\"#569CD6\">" +
-                          $"{EscapeXml(c.ToString())}</text>");
-
-            double baselineY = cellY + labelH + charHeight * 0.82;
-            sb.AppendLine($"  <line x1=\"{cellX + 8:F1}\" y1=\"{baselineY:F1}\" " +
-                          $"x2=\"{cellX + cellW - 8:F1}\" y2=\"{baselineY:F1}\" " +
-                          $"stroke=\"#333\" stroke-width=\"0.5\"/>");
-
-            sb.AppendLine(paths);
-        }
-
-        sb.AppendLine("</svg>");
-        return sb.ToString();
-    }
-
-    private string? CharToSvgPaths(char c, double cellX, double cellY, double cellW, double cellH)
-    {
-        string fp = GetCharacterFilePath(c, 1);
-        if (!File.Exists(fp)) return null;
-        StrokeData? sd;
-        try { sd = JsonSerializer.Deserialize<StrokeData>(File.ReadAllText(fp)); }
-        catch { return null; }
-        if (sd == null || sd.Strokes.Count == 0) return null;
-
-        double scale     = sd.Height > 0 ? cellH / sd.Height : 1.0;
-        double charW     = sd.Width * scale;
-        double ox        = cellX + (cellW - charW) / 2;
-        double oy        = cellY + cellH - sd.Baseline * scale;
-
-        double maxW  = _genStrokeWidth;
-        double taper = _taperAmount;
-
-        var sb = new System.Text.StringBuilder();
-        sb.AppendLine($"  <g>");
-
-        foreach (var stroke in sd.Strokes)
-        {
-            var pts = stroke.Points
-                .Select(p => new Point(ox + p.X * scale, oy + (p.Y - sd.Height) * scale + cellH))
-                .ToList();
-
-            if (pts.Count == 0) continue;
-
-            if (taper > 0 && pts.Count >= 1)
-            {
-                double totalLen = 0;
-                var arcLen = new double[pts.Count];
-                for (int i = 1; i < pts.Count; i++)
-                {
-                    double dx2 = pts[i].X - pts[i-1].X, dy2 = pts[i].Y - pts[i-1].Y;
-                    totalLen += Math.Sqrt(dx2*dx2 + dy2*dy2);
-                    arcLen[i] = totalLen;
-                }
-                double effectiveMax = maxW + taper;
-                double step = Math.Max(0.8, effectiveMax * 0.12);
-                int seg = 0;
-                var circles = new System.Text.StringBuilder();
-                for (double dist = 0; dist <= totalLen + step; dist += step)
-                {
-                    double dc = Math.Min(dist, totalLen);
-                    while (seg < pts.Count - 2 && arcLen[seg+1] < dc) seg++;
-                    double span = arcLen[seg+1] - arcLen[seg];
-                    double u  = span > 0.001 ? (dc - arcLen[seg]) / span : 0;
-                    double cx = pts[seg].X + u * (pts[seg+1].X - pts[seg].X);
-                    double cy = pts[seg].Y + u * (pts[seg+1].Y - pts[seg].Y);
-                    double t  = totalLen > 0 ? dc / totalLen : 0.5;
-                    double r  = effectiveMax * 0.5 * Math.Sin(Math.PI * t);
-                    if (r < 0.4) r = 0.4;
-                    circles.Append($"<circle cx=\"{cx:F2}\" cy=\"{cy:F2}\" r=\"{r:F2}\"/>");
-                }
-                sb.AppendLine($"    <g fill=\"#e8e8e8\">{circles}</g>");
-            }
-            else
-            {
-                var ptStr = string.Join(" ", pts.Select(p => $"{p.X:F2},{p.Y:F2}"));
-                sb.AppendLine($"    <polyline points=\"{ptStr}\" " +
-                              $"fill=\"none\" stroke=\"#e8e8e8\" " +
-                              $"stroke-width=\"{maxW:F1}\" " +
-                              $"stroke-linecap=\"round\" stroke-linejoin=\"round\"/>");
-            }
-        }
-
-        sb.Append("  </g>");
-        return sb.ToString();
-    }
-
-    private static string EscapeXml(string s) =>
-        s.Replace("&", "&amp;").Replace("<", "&lt;").Replace(">", "&gt;")
-         .Replace("\"", "&quot;").Replace("'", "&apos;");
-
-    // ─── Template ────────────────────────────────────────────────
-    private static readonly string TemplatesRoot = TemplatesPath;
-
-    private void RefreshTemplateComboBox(string selectName)
-    {
-        TemplateComboBox.SelectionChanged -= TemplateComboBox_SelectionChanged;
-        TemplateComboBox.Items.Clear();
-
-        var builtIn = new[] { "Default", "School", "Fancy", "Messy" };
-        IEnumerable<string> onDisk = Directory.Exists(TemplatesRoot)
-            ? Directory.GetDirectories(TemplatesRoot)
-                       .Select(System.IO.Path.GetFileName)
-                       .Where(n => n != null && !builtIn.Contains(n))
-                       .OrderBy(n => n)!
-            : Enumerable.Empty<string>();
-
-        string selectLabel = selectName;
-        foreach (var n in builtIn.Concat(onDisk))
-        {
-            string label = n == _defaultTemplate ? $"{n} ★" : n;
-            TemplateComboBox.Items.Add(label);
-            if (n == selectName) selectLabel = label;
-        }
-
-        int idx = TemplateComboBox.Items.IndexOf(selectLabel);
-        TemplateComboBox.SelectedIndex = idx >= 0 ? idx : 0;
-        TemplateComboBox.SelectionChanged += TemplateComboBox_SelectionChanged;
-
-        // Sync CurrentTemplate from selection
-        var raw = TemplateComboBox.SelectedItem?.ToString() ?? "Default";
-        CurrentTemplate = raw.TrimEnd(' ', '★');
-        UpdateDefaultStar();
-    }
-
-    private void TemplateComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
-    {
-        var raw = TemplateComboBox.SelectedItem?.ToString() ?? "Default";
-        CurrentTemplate = raw.TrimEnd(' ', '★');
-        CreateCharacterGrid();
-        _charCache.Clear(); _strokeDataCache.Clear();
-        LoadAllCharsCache();
-        UpdateDefaultStar();
-        if (_appMode == AppMode.Type)
-            RefreshGeneratedText();
-        else
-            AlphabetEditCanvas?.InvalidateVisual();
-    }
-
-    private void ClearTemplate_Click(object sender, RoutedEventArgs e) { /* removed — use Delete */ }
-
-    private void DeleteTemplate_Click(object sender, RoutedEventArgs e)
-    {
-        var name = CurrentTemplate;
-        var builtIn = new[] { "Default", "School", "Fancy", "Messy" };
-        if (builtIn.Contains(name))
-        {
-            MessageBox.Show($"Cannot delete built-in template \"{name}\".\nYou can clear individual characters manually.",
-                "Cannot delete", MessageBoxButton.OK, MessageBoxImage.Information);
-            return;
-        }
-        if (MessageBox.Show(
-                $"Delete template \"{name}\" and all its characters?\nThis cannot be undone.",
-                "Delete template", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
-            return;
-
-        string folder = System.IO.Path.Combine(TemplatesPath, name);
-        if (Directory.Exists(folder))
-            Directory.Delete(folder, recursive: true);
-
-        if (_defaultTemplate == name) _defaultTemplate = "Default";
-        _charCache.Clear(); _strokeDataCache.Clear();
-        RefreshTemplateComboBox("Default");
-        UpdateDefaultStar();
-    }
-
-    private void SetDefaultTemplate_Click(object sender, RoutedEventArgs e)
-    {
-        _defaultTemplate = CurrentTemplate;
-        SavePenSettings();
-        RefreshTemplateComboBox(CurrentTemplate);
-    }
-
-    private void UpdateDefaultStar()
-    {
-        if (DefaultStarLabel == null) return;
-        DefaultStarLabel.Text = CurrentTemplate == _defaultTemplate ? "★" : "☆";
-        DefaultStarLabel.Foreground = CurrentTemplate == _defaultTemplate
-            ? GetBrush("AccentBrush") : GetBrush("SecondaryText");
-    }
-
-    // ─── Export / Import ─────────────────────────────────────────
-    private record TemplateBundle(
-        string Name,
-        int Version,
-        Dictionary<string, StrokeData> Characters);
-
-    private void ExportTemplate_Click(object sender, RoutedEventArgs e)
-    {
-        string folder = GetTemplateFolder();
-        if (!Directory.Exists(folder))
-        {
-            MessageBox.Show("No files to export — draw some letters first.");
-            return;
-        }
-
-        var files = Directory.GetFiles(folder, "*.json");
-        if (files.Length == 0)
-        {
-            MessageBox.Show("Template folder is empty.");
-            return;
-        }
-
-        var chars = new Dictionary<string, StrokeData>();
-        foreach (var f in files)
-        {
-            var sd = JsonSerializer.Deserialize<StrokeData>(File.ReadAllText(f));
-            if (sd != null) chars[System.IO.Path.GetFileName(f)] = sd;
-        }
-
-        var bundle = new TemplateBundle(CurrentTemplate, 1, chars);
-        string json = JsonSerializer.Serialize(bundle, new JsonSerializerOptions { WriteIndented = true });
-
-        var dlg = new Microsoft.Win32.SaveFileDialog
-        {
-            Title      = "Eksportuj template",
-            FileName   = $"{CurrentTemplate}.nwt",
-            DefaultExt = ".nwt",
-            Filter     = "Nottwrite Template (*.nwt)|*.nwt|JSON (*.json)|*.json"
-        };
-
-        if (dlg.ShowDialog() == true)
-        {
-            File.WriteAllText(dlg.FileName, json);
-            MessageBox.Show($"Exported {chars.Count} characters to:\n{dlg.FileName}");
-        }
-    }
-
-    private void ImportTemplate_Click(object sender, RoutedEventArgs e)
-    {
-        var dlg = new Microsoft.Win32.OpenFileDialog
-        {
-            Title  = "Importuj template",
-            Filter = "Nottwrite Template (*.nwt)|*.nwt|JSON (*.json)|*.json"
-        };
-
-        if (dlg.ShowDialog() != true) return;
-
-        TemplateBundle? bundle;
-        try
-        {
-            bundle = JsonSerializer.Deserialize<TemplateBundle>(File.ReadAllText(dlg.FileName));
-        }
-        catch
-        {
-            MessageBox.Show("Invalid template file.");
-            return;
-        }
-
-        if (bundle == null || bundle.Characters.Count == 0)
-        {
-            MessageBox.Show("File is empty or corrupted.");
-            return;
-        }
-
-        string name = bundle.Name;
-        var builtIn = new[] { "Default", "School", "Fancy", "Messy" };
-
-        if (builtIn.Contains(name))
-        {
-            var result = MessageBox.Show(
-                $"Template '{name}' is a built-in template. Overwrite?\n\nClick No to use a custom name.",
-                "Warning", MessageBoxButton.YesNoCancel);
-
-            if (result == MessageBoxResult.Cancel) return;
-            if (result == MessageBoxResult.No)
-            {
-                name = $"{name}_imported";
-            }
-        }
-
-        string targetFolder = System.IO.Path.Combine(TemplatesRoot, name);
-        if (Directory.Exists(targetFolder) && !builtIn.Contains(bundle.Name))
-        {
-            if (MessageBox.Show($"Template '{name}' already exists. Overwrite?",
-                    "Warning", MessageBoxButton.YesNo) == MessageBoxResult.No)
-                return;
-        }
-
-        Directory.CreateDirectory(targetFolder);
-        foreach (var (filename, sd) in bundle.Characters)
-        {
-            string path = System.IO.Path.Combine(targetFolder, filename);
-            File.WriteAllText(path, JsonSerializer.Serialize(sd,
-                new JsonSerializerOptions { WriteIndented = true }));
-        }
-
-        RefreshTemplateComboBox(name);
-        MessageBox.Show($"Imported '{name}' — {bundle.Characters.Count} characters.");
-    }
 
     // ── Custom window chrome ──────────────────────────────────────
     private void TitleBar_MouseLeftButtonDown(object sender, System.Windows.Input.MouseButtonEventArgs e)

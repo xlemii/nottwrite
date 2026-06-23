@@ -6,16 +6,19 @@
         Width="480" Height="340"
         ResizeMode="NoResize"
         WindowStartupLocation="CenterOwner"
-        Background="#252526">
+        FontFamily="pack://application:,,,/Fonts/geist-font/Geist/ttf/#Geist"
+        Background="#1E1E1E">
 
     <Window.Resources>
-        <SolidColorBrush x:Key="Bg"      Color="#252526"/>
-        <SolidColorBrush x:Key="Surface" Color="#2D2D30"/>
-        <SolidColorBrush x:Key="Border"  Color="#3F3F46"/>
-        <SolidColorBrush x:Key="Text"    Color="#D4D4D4"/>
-        <SolidColorBrush x:Key="SubText" Color="#858585"/>
-        <SolidColorBrush x:Key="Accent"  Color="#569CD6"/>
-        <SolidColorBrush x:Key="BtnBg"   Color="#3C3C3C"/>
+        <!-- on-brand palette: matches app dark surfaces + violet accent -->
+        <SolidColorBrush x:Key="Bg"      Color="#1E1E1E"/>
+        <SolidColorBrush x:Key="Surface" Color="#2E2E2E"/>
+        <SolidColorBrush x:Key="Border"  Color="#333333"/>
+        <SolidColorBrush x:Key="Text"    Color="#F0F0F0"/>
+        <SolidColorBrush x:Key="SubText" Color="#888888"/>
+        <SolidColorBrush x:Key="Accent"  Color="#8B7DC4"/>
+        <SolidColorBrush x:Key="AccentHover" Color="#A898D8"/>
+        <SolidColorBrush x:Key="BtnBg"   Color="#363636"/>
 
         <Style TargetType="TextBlock">
             <Setter Property="Foreground" Value="{StaticResource Text}"/>
@@ -35,12 +38,18 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="TextBox">
-                        <Border Background="{TemplateBinding Background}"
+                        <Border x:Name="TbBd" Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="3">
+                                CornerRadius="6">
                             <ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
                         </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsFocused" Value="True">
+                                <Setter TargetName="TbBd" Property="BorderBrush"
+                                        Value="{StaticResource Accent}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -61,7 +70,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="3"
+                                CornerRadius="6"
                                 Padding="{TemplateBinding Padding}">
                             <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"
                                               TextElement.Foreground="{TemplateBinding Foreground}"/>

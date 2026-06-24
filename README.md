@@ -52,7 +52,7 @@ Turn your handwriting into a real, installable font. Draw each character once, t
 ```bash
 git clone https://github.com/lemiis/nottwrite.git
 cd nottwrite
-dotnet run --project src/HandwritingFontCreator.UI
+dotnet run --project src/nottwrite.UI
 ```
 
 ---
@@ -76,12 +76,12 @@ dotnet run --project src/HandwritingFontCreator.UI
 ```
 nottwrite/
 ├── src/
-│   ├── HandwritingFontCreator.UI/      # WPF app (XAML + partial-class C#)
-│   └── HandwritingFontCreator.Core/    # Models + TrueType font writer
+│   ├── nottwrite.UI/      # WPF app (XAML + partial-class C#)
+│   └── nottwrite.Core/    # Models + TrueType font writer
 ├── templates/                          # Per-template character JSON
 ├── stt.py                              # Voice-input script
 ├── tests/
-└── HandwritingFontCreator.slnx
+└── nottwrite.slnx
 ```
 
 ---

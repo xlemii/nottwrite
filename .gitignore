@@ -68,3 +68,4 @@ $RECYCLE.BIN/
 # Claude Code (local session artifacts, not project config)
 .claude/worktrees/
 .claude/settings.local.json
+.claude

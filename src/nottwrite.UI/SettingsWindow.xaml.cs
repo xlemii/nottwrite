@@ -19,7 +19,7 @@ public partial class SettingsWindow : Window
     {
         _hk = hk;
         InitializeComponent();
-        Loaded += (_, _) => { SyncTheme(); BuildRows(); };
+        Loaded += (_, _) => { SyncTheme(); BuildRows(); (Owner as MainWindow)?.LocalizeWindow(this); };
     }
 
     private void SyncTheme()
@@ -238,6 +238,19 @@ public partial class SettingsWindow : Window
             }
         }
         AutoSaveIntervalCombo.IsEnabled = mw.AutoSaveEnabled;
+
+        foreach (ComboBoxItem item in LangCombo.Items)
+            if (item.Tag as string == mw._lang) { LangCombo.SelectedItem = item; break; }
+    }
+
+    private void LangCombo_Changed(object sender, SelectionChangedEventArgs e)
+    {
+        if (Owner is not MainWindow mw) return;
+        if (LangCombo.SelectedItem is ComboBoxItem it && it.Tag is string lang && lang != mw._lang)
+        {
+            mw.SetLanguage(lang);
+            mw.LocalizeWindow(this);   // re-localize this window too
+        }
     }
 
     private void TiltCheckBox_Changed(object sender, RoutedEventArgs e)
@@ -293,7 +306,7 @@ public partial class SettingsWindow : Window
         foreach (var (id, name, colors) in MainWindow.Themes)
         {
             bool isActive = id == active;
-            var card = BuildThemeCard(id, name, colors, isActive);
+            var card = BuildThemeCard(id, mainWin?.T(name) ?? name, colors, isActive);
             ThemeList.Children.Add(card);
         }
     }

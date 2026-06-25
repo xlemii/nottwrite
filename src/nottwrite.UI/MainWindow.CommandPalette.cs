@@ -15,23 +15,25 @@ public partial class MainWindow
 
     private void BuildCommands()
     {
+        Command C(string name, string hint, string shortcut, Action run) => new(T(name), T(hint), shortcut, run);
         _commands = new()
         {
-            new("Go to Notes",        "Personal library",        "Tab",    () => SwitchMode(AppMode.Notes)),
-            new("Go to Type",         "Write on paper",          "Tab",    () => SwitchMode(AppMode.Type)),
-            new("Go to Edit",         "Draw characters",         "Tab",    () => SwitchMode(AppMode.Edit)),
-            new("New note",           "Create a notebook",       "",       () => { SwitchMode(AppMode.Notes); NewNote_Click(this, new RoutedEventArgs()); }),
-            new("New folder",         "Create a category",       "",       () => { SwitchMode(AppMode.Notes); NewFolder_Click(this, new RoutedEventArgs()); }),
-            new("Export font (.ttf)", "Build installable font",  "",       () => ExportFontButton_Click(this, new RoutedEventArgs())),
-            new("Export as PNG",      "Save current page",       "",       () => ExportPngButton_Click(this, new RoutedEventArgs())),
-            new("Export as PDF",      "Save current page",       "",       () => ExportPdfButton_Click(this, new RoutedEventArgs())),
-            new("Export as SVG",      "Save current page",       "",       () => ExportSvgButton_Click(this, new RoutedEventArgs())),
-            new("Import font / template", "Edit an existing font", "",     () => { SwitchMode(AppMode.Edit); ImportTemplate_Click(this, new RoutedEventArgs()); }),
-            new("Settings",           "Hotkeys, themes, general","",       () => BtnSettings_Click(this, new RoutedEventArgs())),
-            new("Bold",               "Toggle bold",             _hk.Label("Bold"),   () => { if (HasSelection) ApplyFormatToSelection(c => c with { Bold = !c.Bold }); else BoldToggle(); }),
-            new("Italic",             "Toggle italic",           _hk.Label("Italic"), () => { if (HasSelection) ApplyFormatToSelection(c => c with { Italic = !c.Italic }); else ItalicToggle(); }),
-            new("Undo",               "Undo last change",        _hk.Label("Undo"),   () => UndoCommand_Executed(this, null!)),
-            new("Voice input",        "Dictate text",            _hk.Label("VoiceInput"), () => SpeechBtn_Click(this, new RoutedEventArgs())),
+            C("Go to Notes",        "Personal library",        "Tab",    () => SwitchMode(AppMode.Notes)),
+            C("Go to Type",         "Write on paper",          "Tab",    () => SwitchMode(AppMode.Type)),
+            C("Go to Edit",         "Draw characters",         "Tab",    () => SwitchMode(AppMode.Edit)),
+            C("New note",           "Create a notebook",       "",       () => { SwitchMode(AppMode.Notes); NewNote_Click(this, new RoutedEventArgs()); }),
+            C("New folder",         "Create a category",       "",       () => { SwitchMode(AppMode.Notes); NewFolder_Click(this, new RoutedEventArgs()); }),
+            C("Export font (.ttf)", "Build installable font",  "",       () => ExportFontButton_Click(this, new RoutedEventArgs())),
+            C("Export as PNG",      "Save current page",       "",       () => ExportPngButton_Click(this, new RoutedEventArgs())),
+            C("Export as PDF",      "Save current page",       "",       () => ExportPdfButton_Click(this, new RoutedEventArgs())),
+            C("Export as SVG",      "Save current page",       "",       () => ExportSvgButton_Click(this, new RoutedEventArgs())),
+            C("Import font / template", "Edit an existing font", "",     () => { SwitchMode(AppMode.Edit); ImportTemplate_Click(this, new RoutedEventArgs()); }),
+            C("Settings",           "Hotkeys, themes, general","",       () => BtnSettings_Click(this, new RoutedEventArgs())),
+            C("Keyboard shortcuts", "Show all shortcuts",      "F1",     () => ToggleShortcuts()),
+            C("Bold",               "Toggle bold",             _hk.Label("Bold"),   () => { if (HasSelection) ApplyFormatToSelection(c => c with { Bold = !c.Bold }); else BoldToggle(); }),
+            C("Italic",             "Toggle italic",           _hk.Label("Italic"), () => { if (HasSelection) ApplyFormatToSelection(c => c with { Italic = !c.Italic }); else ItalicToggle(); }),
+            C("Undo",               "Undo last change",        _hk.Label("Undo"),   () => UndoCommand_Executed(this, null!)),
+            C("Voice input",        "Dictate text",            _hk.Label("VoiceInput"), () => SpeechBtn_Click(this, new RoutedEventArgs())),
         };
     }
 

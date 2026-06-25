@@ -47,7 +47,7 @@ public partial class MainWindow
             Title      = "Export font",
             FileName   = $"{SanitizeFontName(CurrentTemplate)}.ttf",
             DefaultExt = ".ttf",
-            Filter     = "TrueType Font (*.ttf)|*.ttf",
+            Filter     = "TrueType Font (*.ttf)|*.ttf|OpenType Font (*.otf)|*.otf|Web Font — WOFF2 (*.woff2)|*.woff2",
         };
         if (dlg.ShowDialog() != true) return;
 
@@ -59,7 +59,8 @@ public partial class MainWindow
                 ShowToast("No drawn characters in the selected range", ToastKind.Warning);
                 return;
             }
-            ShowToast($"Font exported — {glyphs} glyphs", ToastKind.Success);
+            string fmt = System.IO.Path.GetExtension(dlg.FileName).TrimStart('.').ToUpperInvariant();
+            ShowToast($"Font exported — {glyphs} glyphs ({fmt})", ToastKind.Success);
         }
         catch (Exception ex)
         {
@@ -83,19 +84,30 @@ public partial class MainWindow
             if (include != null && !include(ch)) continue;
             var variants = GetAllVariantPaths(ch);
             if (variants.Count == 0) continue;
-            var sd = GetStrokeDataCached(variants[0]);
-            if (sd == null || sd.Strokes.Count == 0 || sd.Height < 1) continue;
 
-            var glyph = BuildGlyph(sd);
-            if (glyph.Contours.Count == 0) continue;
+            // Build a glyph for each drawn variant; the first usable one is the
+            // default, the rest become calt alternates for natural repetition.
+            var glyphs = new List<TrueTypeFontBuilder.Glyph>();
+            foreach (var vp in variants)
+            {
+                var sd = GetStrokeDataCached(vp);
+                if (sd == null || sd.Strokes.Count == 0 || sd.Height < 1) continue;
+                var g = BuildGlyph(sd);
+                if (g.Contours.Count > 0) glyphs.Add(g);
+            }
+            if (glyphs.Count == 0) continue;
 
-            builder.AddGlyph(ch, glyph);
+            builder.AddGlyphWithVariants(ch, glyphs[0], glyphs.Skip(1).ToList());
             built++;
         }
 
         if (built == 0) return 0;
 
-        File.WriteAllBytes(path, builder.Build());
+        // .ttf and .otf share the same glyf-based OpenType bytes (OpenType allows
+        // TrueType outlines); .woff2 is the Brotli-compressed web wrapper.
+        byte[] sfnt = builder.Build();
+        bool woff2 = path.EndsWith(".woff2", StringComparison.OrdinalIgnoreCase);
+        File.WriteAllBytes(path, woff2 ? Woff2Writer.Wrap(sfnt) : sfnt);
         return built;
     }
 
@@ -329,6 +341,7 @@ public partial class MainWindow
 
         _charCache.Clear();
         _strokeDataCache.Clear();
+        InvalidateVariantCache();
         RefreshTemplateComboBox(name);
         ShowToast($"Imported '{name}' — {built} glyphs, now editable", ToastKind.Success);
     }

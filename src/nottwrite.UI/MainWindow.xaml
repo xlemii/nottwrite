@@ -460,6 +460,8 @@
             <Setter Property="Template">
                 <Setter.Value>
                     <ControlTemplate TargetType="Slider">
+                        <Border x:Name="SliderFocus" CornerRadius="4" Padding="2,3"
+                                BorderThickness="1" BorderBrush="Transparent">
                         <Grid>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto"/>
@@ -505,6 +507,13 @@
                                 </Track.Thumb>
                             </Track>
                         </Grid>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocusWithin" Value="True">
+                                <Setter TargetName="SliderFocus" Property="BorderBrush"
+                                        Value="{DynamicResource AccentBrush}"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
                     </ControlTemplate>
                 </Setter.Value>
             </Setter>
@@ -550,9 +559,19 @@
             <StackPanel Grid.Column="0" Orientation="Horizontal"
                         VerticalAlignment="Center" Margin="14,0,0,0">
 
-                <!-- App name -->
+                <!-- App name + one-line identity -->
                 <TextBlock Text="nottwrite" FontSize="13" FontWeight="SemiBold"
                            Foreground="{DynamicResource PrimaryText}"
+                           VerticalAlignment="Center" Margin="0,0,6,0"/>
+                <!-- unsaved-changes dot -->
+                <Ellipse Name="TitleUnsavedDot" Width="7" Height="7" Margin="0,0,10,0"
+                         VerticalAlignment="Center" Visibility="Collapsed"
+                         Fill="{DynamicResource WarningBrush}"
+                         ToolTip="Unsaved changes"/>
+                <Border Width="1" Height="14" Background="{DynamicResource AppBorderBrush}"
+                        VerticalAlignment="Center" Margin="0,0,10,0"/>
+                <TextBlock Text="handwriting → font &amp; notes" FontSize="11"
+                           Foreground="{DynamicResource SecondaryText}"
                            VerticalAlignment="Center" Margin="0,0,20,0"/>
             </StackPanel>
 
@@ -564,7 +583,7 @@
                       shell:WindowChrome.IsHitTestVisibleInChrome="True">
                     <Button Name="ExportMenuBtn" Height="30" Padding="12,0"
                             BorderThickness="0" Click="ExportMenuBtn_Click"
-                            AutomationProperties.Name="Save as / export"
+                            AutomationProperties.Name="Export"
                             Background="{DynamicResource AccentBrush}"
                             BorderBrush="{DynamicResource AccentBrush}"
                             Foreground="White"><!-- primary action: solid accent, theme-aware -->
@@ -576,7 +595,7 @@
                             <TextBlock Text="&#xE74E;" FontFamily="Segoe MDL2 Assets"
                                        FontSize="12" Foreground="White"
                                        VerticalAlignment="Center" Margin="0,0,8,0"/>
-                            <TextBlock Text="Save As" FontSize="12" FontWeight="SemiBold"
+                            <TextBlock Text="Export" FontSize="12" FontWeight="SemiBold"
                                        Foreground="White" VerticalAlignment="Center"/>
                             <Border Width="1" Height="14" Margin="9,0,8,0"
                                     Background="#FFFFFF" Opacity="0.30"/>
@@ -598,6 +617,33 @@
                                                   ShadowDepth="6" Opacity="0.6"/>
                             </Border.Effect>
                             <StackPanel>
+                                <!-- Font export — shown in Edit mode (the primary result there) -->
+                                <StackPanel Name="FontExportSection" Visibility="Collapsed">
+                                    <TextBlock Text="FONT" FontSize="11" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource SecondaryText}"
+                                               Margin="10,6,10,6"/>
+                                    <Button Style="{StaticResource PopupItemBtn}"
+                                            Click="ExportFontFromMenu_Click">
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border Width="24" Height="24" CornerRadius="5"
+                                                    Background="#2A2350" Margin="0,0,10,0">
+                                                <TextBlock Text="&#x2B07;" FontSize="12"
+                                                           Foreground="{DynamicResource AccentBrush}"
+                                                           HorizontalAlignment="Center"
+                                                           VerticalAlignment="Center"/>
+                                            </Border>
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="Font (.ttf)" FontSize="12.5"
+                                                           VerticalAlignment="Center"/>
+                                                <TextBlock Text="installable handwriting font" FontSize="10"
+                                                           Foreground="{DynamicResource SecondaryText}"/>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Button>
+                                    <Border Height="1" Margin="8,6"
+                                            Background="{DynamicResource AppBorderBrush}"/>
+                                </StackPanel>
+
                                 <TextBlock Text="EXPORT PAGE AS" FontSize="11" FontWeight="SemiBold"
                                            Foreground="{DynamicResource SecondaryText}"
                                            Margin="10,6,10,6"/>
@@ -832,11 +878,33 @@
                                     <WrapPanel>
                                         <Button Name="GhostToggleBtn" Height="28" Padding="8,0"
                                                 Margin="0,0,3,3"
-                                                ToolTip="Ghost" Click="GhostToggle_Click">
+                                                ToolTip="Ghost — faint reference letter" Click="GhostToggle_Click">
                                             <StackPanel Orientation="Horizontal">
                                                 <TextBlock Text="&#x1F441;" FontSize="11"
                                                            Margin="0,0,4,0" VerticalAlignment="Center"/>
                                                 <TextBlock Text="Ghost" FontSize="11" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Name="GuidesToggleBtn" Height="28" Padding="8,0"
+                                                Margin="0,0,3,3"
+                                                ToolTip="Guides — baseline / x-height / cap lines"
+                                                AutomationProperties.Name="Toggle proportion guides"
+                                                Click="GuidesToggle_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#x2261;" FontSize="13"
+                                                           Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Guides" FontSize="11" VerticalAlignment="Center"/>
+                                            </StackPanel>
+                                        </Button>
+                                        <Button Name="FocusModeBtn" Height="28" Padding="8,0"
+                                                Margin="0,0,3,3"
+                                                ToolTip="Focus mode — edit the selected glyph on the full canvas"
+                                                AutomationProperties.Name="Toggle single-glyph focus mode"
+                                                Click="FocusModeToggle_Click">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="&#x26F6;" FontSize="12"
+                                                           Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                                <TextBlock Text="Focus" FontSize="11" VerticalAlignment="Center"/>
                                             </StackPanel>
                                         </Button>
                                         <Button Height="28" Padding="8,0" Margin="0,0,3,3"
@@ -901,6 +969,30 @@
                                                     </StackPanel>
                                                 </Button>
                                             </Grid>
+                                            <Grid Margin="0,0,0,6">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*"/>
+                                                    <ColumnDefinition Width="*"/>
+                                                </Grid.ColumnDefinitions>
+                                                <Button Grid.Column="0" Height="28" Margin="0,0,3,0"
+                                                        ToolTip="Print a sheet, write each letter by hand, then photograph it"
+                                                        Click="ExportTemplateSheet_Click">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x1F5A8;" FontSize="11"
+                                                                   VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="Sheet" FontSize="11" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                                <Button Grid.Column="1" Height="28" Margin="3,0,0,0"
+                                                        ToolTip="Import letters from a photo/scan of a filled-in sheet (experimental, needs Python)"
+                                                        Click="ImportScan_Click">
+                                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                        <TextBlock Text="&#x1F4F7;" FontSize="11"
+                                                                   VerticalAlignment="Center" Margin="0,0,5,0"/>
+                                                        <TextBlock Text="Scan" FontSize="11" VerticalAlignment="Center"/>
+                                                    </StackPanel>
+                                                </Button>
+                                            </Grid>
                                             <ComboBox Name="TemplateComboBox" Height="30"
                                                       SelectionChanged="TemplateComboBox_SelectionChanged"/>
                                             <Grid Margin="0,6,0,0">
@@ -944,6 +1036,12 @@
                                                 <skia:SKElement Name="FontPreviewCanvas"
                                                                 PaintSurface="FontPreviewCanvas_PaintSurface"/>
                                             </Border>
+
+                                            <!-- Custom preview text -->
+                                            <TextBox Name="PreviewTextBox" Height="26" Margin="0,6,0,0"
+                                                     FontSize="11" Text="The quick brown fox"
+                                                     ToolTip="Type your own text to preview your font"
+                                                     TextChanged="PreviewTextBox_Changed"/>
 
                                             <!-- Character set settings -->
                                             <Grid Margin="0,8,0,0">
@@ -1066,6 +1164,7 @@
                                     <Border Background="{DynamicResource Surface2Bg}"
                                             CornerRadius="8" Padding="12,12" Margin="0,0,0,4">
                                         <StackPanel>
+                                            <!-- ── Basic: Size + Opacity (always visible) ── -->
                                             <DockPanel Margin="0,0,0,3">
                                                 <TextBlock Text="Size" FontSize="11"
                                                            Foreground="{DynamicResource SecondaryText}"/>
@@ -1081,44 +1180,6 @@
                                                     Margin="0,0,0,10"/>
 
                                             <DockPanel Margin="0,0,0,3">
-                                                <TextBlock Text="Taper" FontSize="11"
-                                                           Foreground="{DynamicResource SecondaryText}"
-                                                           VerticalAlignment="Center"/>
-                                                <Button Name="TaperToggleBtn" Width="42" Height="20"
-                                                        DockPanel.Dock="Right" Margin="4,0,0,0"
-                                                        Style="{StaticResource ToggleOffBtn}"
-                                                        Click="TaperToggle_Click">
-                                                    <TextBlock Name="TaperToggleLabel" Text="OFF"
-                                                               FontSize="10" FontWeight="Bold"/>
-                                                </Button>
-                                                <TextBlock Name="TaperValueLabel" FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource AccentBrush}"
-                                                           HorizontalAlignment="Right"
-                                                           DockPanel.Dock="Right"/>
-                                            </DockPanel>
-                                            <Slider Name="TaperSlider" Minimum="0" Maximum="10"
-                                                    Value="0" TickFrequency="0.5"
-                                                    IsSnapToTickEnabled="True"
-                                                    ValueChanged="TaperSlider_Changed"
-                                                    Margin="0,0,0,10"/>
-
-                                            <DockPanel Margin="0,0,0,3">
-                                                <TextBlock Text="Tip Roundness" FontSize="11"
-                                                           Foreground="{DynamicResource SecondaryText}"/>
-                                                <TextBlock Name="TipRoundnessLabel" FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource AccentBrush}"
-                                                           HorizontalAlignment="Right"
-                                                           DockPanel.Dock="Right"/>
-                                            </DockPanel>
-                                            <Slider Name="TipRoundnessSlider" Minimum="0" Maximum="1"
-                                                    Value="1" TickFrequency="0.05"
-                                                    IsSnapToTickEnabled="True"
-                                                    ValueChanged="TipRoundness_Changed"
-                                                    Margin="0,0,0,10"/>
-
-                                            <DockPanel Margin="0,0,0,3">
                                                 <TextBlock Text="Opacity" FontSize="11"
                                                            Foreground="{DynamicResource SecondaryText}"/>
                                                 <TextBlock Name="BrushOpacityLabel" FontSize="11"
@@ -1131,147 +1192,137 @@
                                                     Maximum="100" Value="100" TickFrequency="5"
                                                     IsSnapToTickEnabled="True"
                                                     ValueChanged="BrushOpacity_Changed"
-                                                    Margin="0,0,0,10"/>
+                                                    Margin="0,0,0,4"/>
 
-                                            <DockPanel Margin="0,0,0,3">
-                                                <TextBlock Text="Smoothing" FontSize="11"
-                                                           Foreground="{DynamicResource SecondaryText}"/>
-                                                <TextBlock Name="BrushSmoothLabel" FontSize="11"
-                                                           FontWeight="SemiBold"
-                                                           Foreground="{DynamicResource AccentBrush}"
-                                                           HorizontalAlignment="Right"
-                                                           DockPanel.Dock="Right"/>
-                                            </DockPanel>
-                                            <Slider Name="BrushSmoothSlider" Minimum="0" Maximum="5"
-                                                    Value="2" TickFrequency="1"
-                                                    IsSnapToTickEnabled="True"
-                                                    ValueChanged="BrushSmooth_Changed"
-                                                    Margin="0,0,0,10"/>
+                                            <!-- ── Advanced toggle ── -->
+                                            <Button Name="AdvancedBrushToggleBtn" Height="26"
+                                                    Margin="0,4,0,0" Padding="2,0"
+                                                    HorizontalContentAlignment="Left"
+                                                    Background="Transparent" BorderThickness="0"
+                                                    Click="AdvancedBrushToggle_Click"
+                                                    ToolTip="Show taper, smoothing, pressure and more">
+                                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <TextBlock Name="AdvancedBrushChevron" Text="&#x25B8;"
+                                                               FontSize="10" Margin="0,0,7,0"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                    <TextBlock Name="AdvancedBrushLabel" Text="More options"
+                                                               FontSize="11" FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               VerticalAlignment="Center"/>
+                                                </StackPanel>
+                                            </Button>
 
-                                            <StackPanel Name="CalligAnglePanel" Visibility="Collapsed">
+                                            <!-- ── Advanced: collapsed by default ── -->
+                                            <StackPanel Name="AdvancedBrushPanel" Visibility="Collapsed"
+                                                        Margin="0,8,0,0">
                                                 <DockPanel Margin="0,0,0,3">
-                                                    <TextBlock Text="Callig Angle" FontSize="11"
-                                                               Foreground="{DynamicResource SecondaryText}"/>
-                                                    <TextBlock Name="CalligAngleLabel" FontSize="11"
+                                                    <TextBlock Text="Taper" FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryText}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Name="TaperToggleBtn" Width="42" Height="20"
+                                                            DockPanel.Dock="Right" Margin="4,0,0,0"
+                                                            Style="{StaticResource ToggleOffBtn}"
+                                                            Click="TaperToggle_Click">
+                                                        <TextBlock Name="TaperToggleLabel" Text="OFF"
+                                                                   FontSize="10" FontWeight="Bold"/>
+                                                    </Button>
+                                                    <TextBlock Name="TaperValueLabel" FontSize="11"
                                                                FontWeight="SemiBold"
                                                                Foreground="{DynamicResource AccentBrush}"
                                                                HorizontalAlignment="Right"
                                                                DockPanel.Dock="Right"/>
                                                 </DockPanel>
-                                                <Slider Name="CalligAngleSlider" Minimum="0"
-                                                        Maximum="90" Value="45" TickFrequency="5"
+                                                <Slider Name="TaperSlider" Minimum="0" Maximum="10"
+                                                        Value="0" TickFrequency="0.5"
                                                         IsSnapToTickEnabled="True"
-                                                        ValueChanged="CalligAngle_Changed"
+                                                        ValueChanged="TaperSlider_Changed"
                                                         Margin="0,0,0,10"/>
-                                            </StackPanel>
 
-                                            <DockPanel>
-                                                <TextBlock Text="Pressure" FontSize="11"
-                                                           Foreground="{DynamicResource SecondaryText}"
-                                                           VerticalAlignment="Center"/>
-                                                <Button Name="PressureToggleBtn" Width="42" Height="20"
-                                                        DockPanel.Dock="Right"
-                                                        Style="{StaticResource ToggleOffBtn}"
-                                                        Click="PressureToggle_Click">
-                                                    <TextBlock Name="PressureToggleLabel" Text="OFF"
-                                                               FontSize="10" FontWeight="Bold"/>
-                                                </Button>
-                                            </DockPanel>
+                                                <DockPanel Margin="0,0,0,3">
+                                                    <TextBlock Text="Tip Roundness" FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryText}"/>
+                                                    <TextBlock Name="TipRoundnessLabel" FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               HorizontalAlignment="Right"
+                                                               DockPanel.Dock="Right"/>
+                                                </DockPanel>
+                                                <Slider Name="TipRoundnessSlider" Minimum="0" Maximum="1"
+                                                        Value="1" TickFrequency="0.05"
+                                                        IsSnapToTickEnabled="True"
+                                                        ValueChanged="TipRoundness_Changed"
+                                                        Margin="0,0,0,10"/>
+
+                                                <DockPanel Margin="0,0,0,3">
+                                                    <TextBlock Text="Smoothing" FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryText}"/>
+                                                    <TextBlock Name="BrushSmoothLabel" FontSize="11"
+                                                               FontWeight="SemiBold"
+                                                               Foreground="{DynamicResource AccentBrush}"
+                                                               HorizontalAlignment="Right"
+                                                               DockPanel.Dock="Right"/>
+                                                </DockPanel>
+                                                <Slider Name="BrushSmoothSlider" Minimum="0" Maximum="5"
+                                                        Value="2" TickFrequency="1"
+                                                        IsSnapToTickEnabled="True"
+                                                        ValueChanged="BrushSmooth_Changed"
+                                                        Margin="0,0,0,10"/>
+
+                                                <StackPanel Name="CalligAnglePanel" Visibility="Collapsed">
+                                                    <DockPanel Margin="0,0,0,3">
+                                                        <TextBlock Text="Callig Angle" FontSize="11"
+                                                                   Foreground="{DynamicResource SecondaryText}"/>
+                                                        <TextBlock Name="CalligAngleLabel" FontSize="11"
+                                                                   FontWeight="SemiBold"
+                                                                   Foreground="{DynamicResource AccentBrush}"
+                                                                   HorizontalAlignment="Right"
+                                                                   DockPanel.Dock="Right"/>
+                                                    </DockPanel>
+                                                    <Slider Name="CalligAngleSlider" Minimum="0"
+                                                            Maximum="90" Value="45" TickFrequency="5"
+                                                            IsSnapToTickEnabled="True"
+                                                            ValueChanged="CalligAngle_Changed"
+                                                            Margin="0,0,0,10"/>
+                                                </StackPanel>
+
+                                                <DockPanel>
+                                                    <TextBlock Text="Pressure" FontSize="11"
+                                                               Foreground="{DynamicResource SecondaryText}"
+                                                               VerticalAlignment="Center"/>
+                                                    <Button Name="PressureToggleBtn" Width="42" Height="20"
+                                                            DockPanel.Dock="Right"
+                                                            Style="{StaticResource ToggleOffBtn}"
+                                                            Click="PressureToggle_Click">
+                                                        <TextBlock Name="PressureToggleLabel" Text="OFF"
+                                                                   FontSize="10" FontWeight="Bold"/>
+                                                    </Button>
+                                                </DockPanel>
+                                            </StackPanel>
                                         </StackPanel>
                                     </Border>
 
-                            <!-- Inline color picker -->
+                            <!-- Char colour — opens the shared colour picker (ColorPickerWindow) -->
                             <Border Grid.Row="2" Padding="10,10"
                                     Background="{DynamicResource Surface2Bg}"
                                     BorderBrush="{DynamicResource AppBorderBrush}"
                                     BorderThickness="0,1,0,0">
-                                <StackPanel>
-                                    <DockPanel Margin="0,0,0,7">
+                                <Button Name="EditCharColorBtn" Height="38"
+                                        Click="EditCharColor_Click"
+                                        HorizontalContentAlignment="Stretch"
+                                        AutomationProperties.Name="Character ink colour"
+                                        ToolTip="Set the ink colour for this character">
+                                    <DockPanel LastChildFill="False">
                                         <TextBlock Text="CHAR COLOR" Style="{StaticResource SectionLabel}"
-                                                   Margin="0" VerticalAlignment="Center"/>
-                                        <Border Name="InlineColorPreview" Width="34" Height="16"
+                                                   Margin="0" DockPanel.Dock="Left"
+                                                   VerticalAlignment="Center"/>
+                                        <Border Name="InlineColorPreview" Width="44" Height="18"
                                                 CornerRadius="4" Background="#E8E8E8"
                                                 BorderBrush="{DynamicResource AppBorderBrush}"
                                                 BorderThickness="1"
-                                                HorizontalAlignment="Right" DockPanel.Dock="Right"/>
+                                                DockPanel.Dock="Right" VerticalAlignment="Center"/>
                                     </DockPanel>
-                                    <Grid Height="128">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*"/>
-                                            <ColumnDefinition Width="8"/>
-                                            <ColumnDefinition Width="16"/>
-                                            <ColumnDefinition Width="8"/>
-                                            <ColumnDefinition Width="98"/>
-                                        </Grid.ColumnDefinitions>
-                                        <Border Grid.Column="0" CornerRadius="6"
-                                                BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" ClipToBounds="True">
-                                            <Grid>
-                                                <skia:SKElement Name="InlineSvCanvas"
-                                                                PaintSurface="InlineSvCanvas_Paint"
-                                                                IsHitTestVisible="False"/>
-                                                <Canvas Name="InlineSvInput" Background="Transparent"
-                                                        MouseLeftButtonDown="InlineSvInput_MouseDown"
-                                                        MouseMove="InlineSvInput_MouseMove"
-                                                        MouseLeftButtonUp="InlineSvInput_MouseUp"/>
-                                            </Grid>
-                                        </Border>
-                                        <Border Grid.Column="2" CornerRadius="4"
-                                                BorderBrush="{DynamicResource AppBorderBrush}"
-                                                BorderThickness="1" ClipToBounds="True">
-                                            <Grid>
-                                                <skia:SKElement Name="InlineHueCanvas"
-                                                                PaintSurface="InlineHueCanvas_Paint"
-                                                                IsHitTestVisible="False"/>
-                                                <Canvas Name="InlineHueInput" Background="Transparent"
-                                                        MouseLeftButtonDown="InlineHueInput_MouseDown"
-                                                        MouseMove="InlineHueInput_MouseMove"
-                                                        MouseLeftButtonUp="InlineHueInput_MouseUp"/>
-                                            </Grid>
-                                        </Border>
-                                        <StackPanel Grid.Column="4" VerticalAlignment="Top">
-                                            <TextBlock Text="RGB" FontSize="11" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource SecondaryText}"
-                                                       Margin="0,0,0,3"/>
-                                            <Grid Margin="0,0,0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="15"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="R:" FontSize="11" Foreground="#F87171"/>
-                                                <TextBox Name="InlineRInput" Grid.Column="1" Height="22"
-                                                         FontSize="10" Padding="4,2"
-                                                         TextChanged="InlineRgbInput_Changed"/>
-                                            </Grid>
-                                            <Grid Margin="0,0,0,2">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="15"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="G:" FontSize="11" Foreground="#4ADE80"/>
-                                                <TextBox Name="InlineGInput" Grid.Column="1" Height="22"
-                                                         FontSize="10" Padding="4,2"
-                                                         TextChanged="InlineRgbInput_Changed"/>
-                                            </Grid>
-                                            <Grid Margin="0,0,0,6">
-                                                <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="15"/>
-                                                    <ColumnDefinition Width="*"/>
-                                                </Grid.ColumnDefinitions>
-                                                <TextBlock Text="B:" FontSize="11" Foreground="#60A5FA"/>
-                                                <TextBox Name="InlineBInput" Grid.Column="1" Height="22"
-                                                         FontSize="10" Padding="4,2"
-                                                         TextChanged="InlineRgbInput_Changed"/>
-                                            </Grid>
-                                            <TextBlock Text="HEX" FontSize="11" FontWeight="SemiBold"
-                                                       Foreground="{DynamicResource SecondaryText}"
-                                                       Margin="0,0,0,3"/>
-                                            <TextBox Name="InlineHexInput" Height="22" FontSize="10"
-                                                     MaxLength="7" Padding="4,2"
-                                                     TextChanged="InlineHexInput_Changed"/>
-                                        </StackPanel>
-                                    </Grid>
-                                </StackPanel>
+                                </Button>
                             </Border>
 
                             <!-- Progress -->
@@ -1639,6 +1690,16 @@
                                    VerticalAlignment="Center" Margin="8,0,6,0"
                                    FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
 
+                        <!-- Save status (right) -->
+                        <StackPanel Name="SaveStatePanel" DockPanel.Dock="Right" Orientation="Horizontal"
+                                    VerticalAlignment="Center" Margin="8,0,2,0" Visibility="Collapsed">
+                            <Ellipse Name="SaveStateDot" Width="7" Height="7" Margin="0,0,5,0"
+                                     VerticalAlignment="Center" Fill="{DynamicResource SuccessBrush}"/>
+                            <TextBlock Name="SaveStateLabel" Text="Saved" FontSize="11"
+                                       VerticalAlignment="Center"
+                                       Foreground="{DynamicResource SecondaryText}"/>
+                        </StackPanel>
+
                         <!-- Backlinks -->
                         <Grid DockPanel.Dock="Right" VerticalAlignment="Center" Margin="0,0,4,0">
                             <Button Name="BacklinksBtn" Click="BacklinksBtn_Click"
@@ -1801,8 +1862,8 @@
                         <ComboBox Name="SttLangCombo" DockPanel.Dock="Right"
                                   Height="26" Width="52" FontSize="10" Margin="2,1"
                                   SelectionChanged="SttLang_Changed" ToolTip="Language">
-                            <ComboBoxItem Content="pl" IsSelected="True"/>
-                            <ComboBoxItem Content="en"/>
+                            <ComboBoxItem Content="en" IsSelected="True"/>
+                            <ComboBoxItem Content="pl"/>
                             <ComboBoxItem Content="de"/>
                             <ComboBoxItem Content="fr"/>
                             <ComboBoxItem Content="es"/>
@@ -1811,7 +1872,8 @@
                         </ComboBox>
                         <ComboBox Name="SttDurationCombo" DockPanel.Dock="Right"
                                   Height="26" Width="50" FontSize="10" Margin="2,1"
-                                  SelectionChanged="SttDuration_Changed" ToolTip="Duration">
+                                  SelectionChanged="SttDuration_Changed"
+                                  ToolTip="Chunk length — how often speech is transcribed while you talk (lower = snappier, choppier)">
                             <ComboBoxItem Content="3s"/>
                             <ComboBoxItem Content="5s" IsSelected="True"/>
                             <ComboBoxItem Content="10s"/>
@@ -1822,13 +1884,14 @@
                                 Height="26" Padding="8,0" Margin="2,1"
                                 BorderThickness="0"
                                 Background="{DynamicResource NavActiveBg}"
-                                Click="SpeechBtn_Click" ToolTip="Voice Input (Ctrl+M)">
+                                Click="SpeechBtn_Click"
+                                ToolTip="Voice input — click to start, click again to stop (Ctrl+M)">
                             <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                 <TextBlock Name="SpeechBtnIcon" Text="🎤" FontSize="12"
                                            VerticalAlignment="Center" Margin="0,0,5,0"/>
                                 <StackPanel VerticalAlignment="Center">
                                     <TextBlock Text="Voice" FontSize="11" FontWeight="SemiBold"/>
-                                    <TextBlock Name="SttStatusLabel" Text="click to record"
+                                    <TextBlock Name="SttStatusLabel" Text="push to talk"
                                                FontSize="10" Foreground="{DynamicResource SecondaryText}"/>
                                 </StackPanel>
                             </StackPanel>
@@ -1840,12 +1903,14 @@
                     <ScrollViewer Name="AlphabetScrollViewer"
                                   VerticalScrollBarVisibility="Auto"
                                   HorizontalScrollBarVisibility="Disabled"
+                                  PreviewMouseWheel="AlphabetCanvas_PreviewMouseWheel"
                                   Background="{DynamicResource CanvasBg}">
                         <Grid Name="AlphabetGridHost" Background="{DynamicResource CanvasBg}">
                             <skia:SKElement Name="AlphabetEditCanvas"
                                             PaintSurface="AlphabetEditCanvas_PaintSurface"
                                             IsHitTestVisible="False"/>
                             <Canvas Name="AlphabetInputCanvas" Background="Transparent"
+                                    Focusable="False" KeyboardNavigation.IsTabStop="False"
                                     Stylus.IsPressAndHoldEnabled="False"
                                     MouseLeftButtonDown="Alphabet_MouseDown"
                                     MouseMove="Alphabet_MouseMove"
@@ -1869,6 +1934,7 @@
                                             PaintSurface="TypeSkia_PaintSurface"
                                             IsHitTestVisible="False"/>
                             <Canvas Name="DisplayCanvas" Background="Transparent"
+                                    Focusable="False" KeyboardNavigation.IsTabStop="False"
                                     MouseLeftButtonDown="TypeCanvas_MouseDown"
                                     MouseMove="TypeCanvas_MouseMove"
                                     MouseLeftButtonUp="TypeCanvas_MouseUp"
@@ -2105,28 +2171,15 @@
 
         </Grid>
 
-        <!-- Hidden compat elements -->
+        <!-- Off-screen state holders: the note title + save-status sink are kept
+             in memory but have no on-screen editor of their own. -->
         <Grid Visibility="Collapsed">
-            <TextBox Name="NoteContentBox" TextChanged="NoteContent_Changed"/>
             <TextBox Name="NoteTitleBox" TextChanged="NoteTitle_Changed"/>
             <TextBlock Name="NotesSavedLabel"/>
-            <TextBlock Name="NoteStatsLabel"/>
-            <Border Name="NoteEditorAccent"/>
-            <Border Name="NoteContextAccent"/>
-            <UniformGrid Name="CharacterGrid" Columns="4"/>
-            <TextBlock Name="CurrentCharacterText"/>
-            <TextBox Name="CustomCharInput" MaxLength="1"
-                     TextChanged="CustomCharInput_TextChanged"/>
-            <Button Name="AddCustomCharBtn" Click="AddCustomChar_Click"/>
-            <Border Name="DrawOptionsPanel"/>
-            <Button Name="DrawOptionsToggleBtn" Click="DrawOptionsToggle_Click"/>
-            <Button Name="Var1Btn" Click="VarBtn_Click" Tag="1"/>
-            <Button Name="Var2Btn" Click="VarBtn_Click" Tag="2"/>
-            <Button Name="Var3Btn" Click="VarBtn_Click" Tag="3"/>
         </Grid>
 
         <!-- Save-before-close overlay -->
-        <Grid Name="SaveCloseOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="SaveCloseOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="100">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Width="360"
@@ -2161,7 +2214,7 @@
         </Grid>
 
         <!-- Delete note confirmation overlay -->
-        <Grid Name="DeleteConfirmOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="DeleteConfirmOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="100">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Width="340"
@@ -2197,7 +2250,7 @@
         </Grid>
 
         <!-- Rename note overlay -->
-        <Grid Name="RenameOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="RenameOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="100">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Width="320"
@@ -2227,7 +2280,7 @@
         </Grid>
 
         <!-- Edit tags overlay -->
-        <Grid Name="TagsOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="TagsOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="100">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Width="340"
@@ -2259,32 +2312,8 @@
             </Border>
         </Grid>
 
-        <!-- Color picker overlay -->
-        <Grid Name="ColorPickerOverlay" Grid.RowSpan="2" Visibility="Collapsed"
-              Background="#88000000" Panel.ZIndex="100">
-            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
-                    Width="300"
-                    Background="{DynamicResource PanelBg}"
-                    BorderBrush="{DynamicResource AppBorderBrush}"
-                    BorderThickness="1" CornerRadius="10"
-                    Padding="24,22,24,18">
-                <Border.Effect>
-                    <DropShadowEffect Color="#000000" Opacity="0.55"
-                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
-                </Border.Effect>
-                <StackPanel>
-                    <TextBlock Text="Cover color" FontSize="15" FontWeight="SemiBold"
-                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,16"/>
-                    <WrapPanel Name="ColorSwatchPanel" Margin="0,0,0,16"/>
-                    <Button Content="Cancel" Click="ColorPickerCancel_Click"
-                            HorizontalAlignment="Right"
-                            Height="32" Padding="16,0"/>
-                </StackPanel>
-            </Border>
-        </Grid>
-
         <!-- New note: template picker -->
-        <Grid Name="NewNoteOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="NewNoteOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="100">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Background="{DynamicResource PanelBg}"
@@ -2308,7 +2337,7 @@
         </Grid>
 
         <!-- Font export range overlay -->
-        <Grid Name="FontRangeOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="FontRangeOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="100">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Width="340"
@@ -2334,7 +2363,7 @@
                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,8"/>
                     <CheckBox Name="RangePunct" Content="Punctuation  . , ! ? …" IsChecked="True"
                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,8"/>
-                    <CheckBox Name="RangePolish" Content="Polish  ą ę ó ś …" IsChecked="True"
+                    <CheckBox Name="RangePolish" Content="Polish  ą ę ó ś …" IsChecked="False"
                               Foreground="{DynamicResource PrimaryText}" Margin="0,0,0,0"/>
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,18,0,0">
                         <Button Content="Cancel" Click="FontRangeCancel_Click"
@@ -2354,8 +2383,32 @@
                     Margin="0,0,20,20" Panel.ZIndex="200"
                     IsHitTestVisible="True"/>
 
+        <!-- Busy overlay for long batch ops (scan import, model load) -->
+        <Grid Name="BusyOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+              Background="#88000000" Panel.ZIndex="260">
+            <Border HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="28,22">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.55"
+                                      BlurRadius="32" ShadowDepth="8" Direction="270"/>
+                </Border.Effect>
+                <StackPanel>
+                    <TextBlock Name="BusyLabel" Text="Working…" FontSize="13" FontWeight="SemiBold"
+                               Foreground="{DynamicResource PrimaryText}"
+                               HorizontalAlignment="Center" Margin="0,0,0,14"/>
+                    <ProgressBar IsIndeterminate="True" Style="{x:Null}"
+                                 Height="5" Width="240"
+                                 Foreground="{DynamicResource AccentBrush}"
+                                 Background="{DynamicResource Surface2Bg}"
+                                 BorderThickness="0"/>
+                </StackPanel>
+            </Border>
+        </Grid>
+
         <!-- Command palette (Ctrl+K) -->
-        <Grid Name="CommandPaletteOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="CommandPaletteOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#88000000" Panel.ZIndex="280"
               MouseLeftButtonDown="CommandPalette_BackdropClick">
             <Border Width="540" VerticalAlignment="Top" Margin="0,110,0,0"
@@ -2390,8 +2443,48 @@
             </Border>
         </Grid>
 
+        <!-- Keyboard shortcuts overlay -->
+        <Grid Name="ShortcutsOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
+              Background="#88000000" Panel.ZIndex="290"
+              MouseLeftButtonDown="ShortcutsBackdrop_Click">
+            <Border Width="440" MaxHeight="600" VerticalAlignment="Center" HorizontalAlignment="Center"
+                    Background="{DynamicResource PanelBg}"
+                    BorderBrush="{DynamicResource AppBorderBrush}"
+                    BorderThickness="1" CornerRadius="12" Padding="24,20,24,18"
+                    MouseLeftButtonDown="ShortcutsCard_Click">
+                <Border.Effect>
+                    <DropShadowEffect Color="#000000" Opacity="0.6"
+                                      BlurRadius="40" ShadowDepth="10" Direction="270"/>
+                </Border.Effect>
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                    </Grid.RowDefinitions>
+                    <DockPanel Grid.Row="0" Margin="0,0,0,4">
+                        <Button Name="ShortcutsCloseBtn" DockPanel.Dock="Right" Click="ShortcutsClose_Click"
+                                Width="26" Height="26" Padding="0"
+                                Background="Transparent" BorderThickness="0"
+                                AutomationProperties.Name="Close"
+                                ToolTip="Close (Esc)">
+                            <TextBlock Text="&#x2715;" FontSize="11"
+                                       Foreground="{DynamicResource SecondaryText}"
+                                       VerticalAlignment="Center" HorizontalAlignment="Center"/>
+                        </Button>
+                        <TextBlock Name="ShortcutsTitle" Text="Keyboard shortcuts"
+                                   FontSize="16" FontWeight="Bold"
+                                   Foreground="{DynamicResource PrimaryText}"
+                                   VerticalAlignment="Center"/>
+                    </DockPanel>
+                    <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                        <StackPanel Name="ShortcutsPanel"/>
+                    </ScrollViewer>
+                </Grid>
+            </Border>
+        </Grid>
+
         <!-- Onboarding overlay (first run) -->
-        <Grid Name="OnboardingOverlay" Grid.RowSpan="2" Visibility="Collapsed"
+        <Grid Name="OnboardingOverlay" Grid.RowSpan="2" Visibility="Collapsed" KeyboardNavigation.TabNavigation="Cycle"
               Background="#B0000000" Panel.ZIndex="300">
             <Border HorizontalAlignment="Center" VerticalAlignment="Center"
                     Width="460"
@@ -2420,6 +2513,38 @@
                                TextAlignment="Center"
                                Foreground="{DynamicResource SecondaryText}"
                                Margin="0,0,0,22"/>
+
+                    <!-- Intent chooser (shown on the "what do you want to do?" step) -->
+                    <StackPanel Name="ObIntentPanel" Visibility="Collapsed" Margin="0,0,0,14">
+                        <Button Click="Onboarding_PickIntent" Tag="notes"
+                                Height="58" Margin="0,0,0,8"
+                                HorizontalContentAlignment="Left" Padding="14,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="&#x1F4D3;" FontSize="22" Margin="0,0,14,0"
+                                           VerticalAlignment="Center"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Write by hand" FontSize="13.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryText}"/>
+                                    <TextBlock Text="Take notes and pages in your own handwriting"
+                                               FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+                        <Button Click="Onboarding_PickIntent" Tag="edit"
+                                Height="58"
+                                HorizontalContentAlignment="Left" Padding="14,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="&#x270F;" FontSize="22" Margin="0,0,14,0"
+                                           VerticalAlignment="Center"/>
+                                <StackPanel VerticalAlignment="Center">
+                                    <TextBlock Text="Make a font" FontSize="13.5" FontWeight="SemiBold"
+                                               Foreground="{DynamicResource PrimaryText}"/>
+                                    <TextBlock Text="Draw your letters once, export an installable .ttf"
+                                               FontSize="11" Foreground="{DynamicResource SecondaryText}"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Button>
+                    </StackPanel>
 
                     <!-- step dots -->
                     <StackPanel Name="ObDots" Orientation="Horizontal"

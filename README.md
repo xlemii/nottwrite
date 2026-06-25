@@ -21,7 +21,7 @@ Turn your handwriting into a real, installable font. Draw each character once, t
 - Voice dictation via `faster-whisper`
 
 **Export & UI**
-- Export pages as PNG, JPG, PDF, SVG, or a `.ttf` font
+- Export pages as PNG, JPG, PDF, SVG, or a font (`.ttf` / `.otf` desktop, `.woff2` web)
 - Import / export full template bundles (`.nwt`)
 - Four built-in themes, frameless dark UI, toast notifications
 
@@ -44,6 +44,7 @@ Turn your handwriting into a real, installable font. Draw each character once, t
 - Windows 10 / 11
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 - *Optional (voice input)* — Python 3.10+ with `pip install faster-whisper sounddevice scipy numpy`
+- *Optional (scan import)* — Python 3.10+ with `pip install opencv-python scikit-image numpy`
 
 ---
 

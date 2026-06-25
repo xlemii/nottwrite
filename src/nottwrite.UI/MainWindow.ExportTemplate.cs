@@ -367,7 +367,7 @@ public partial class MainWindow
         var raw = TemplateComboBox.SelectedItem?.ToString() ?? "Default";
         CurrentTemplate = raw.TrimEnd(' ', '★');
         CreateCharacterGrid();
-        _charCache.Clear(); _strokeDataCache.Clear();
+        _charCache.Clear(); _strokeDataCache.Clear(); InvalidateVariantCache();
         LoadAllCharsCache();
         UpdateDefaultStar();
         if (_appMode == AppMode.Type)
@@ -400,7 +400,7 @@ public partial class MainWindow
             Directory.Delete(folder, recursive: true);
 
         if (_defaultTemplate == name) _defaultTemplate = "Default";
-        _charCache.Clear(); _strokeDataCache.Clear();
+        _charCache.Clear(); _strokeDataCache.Clear(); InvalidateVariantCache();
         RefreshTemplateComboBox("Default");
         UpdateDefaultStar();
     }

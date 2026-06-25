@@ -114,28 +114,76 @@ public partial class MainWindow
             ["DangerBrush"]       = "#F85149",
             ["InfoBrush"]         = "#58A6FF",
         }),
+        ("hc", "High Contrast", new() {
+            ["AppBg"]             = "#000000",
+            ["TitleBarBg"]        = "#000000",
+            ["PanelBg"]           = "#000000",
+            ["Surface2Bg"]        = "#0A0A0A",
+            ["CardBg"]            = "#000000",
+            ["CardBg2"]           = "#1A1A1A",
+            ["AccentBrush"]       = "#FFFF00",
+            ["AccentHover"]       = "#FFFF66",
+            ["NavActiveBg"]       = "#333300",
+            ["ButtonBg"]          = "#000000",
+            ["PrimaryText"]       = "#FFFFFF",
+            ["SecondaryText"]     = "#FFFFFF",
+            ["AppBorderBrush"]    = "#FFFFFF",
+            ["CanvasBg"]          = "#000000",
+            ["NotebookLineBrush"] = "#777777",
+            ["StrokeBrush"]       = "#FFFFFF",
+            ["SuccessBrush"]      = "#00FF00",
+            ["WarningBrush"]      = "#FFFF00",
+            ["ErrorBrush"]        = "#FF5555",
+            ["DangerBrush"]       = "#FF5555",
+            ["InfoBrush"]         = "#00FFFF",
+        }),
     ];
     public string _currentThemeId = "dark";
     public bool TiltEnabled = true;
     public bool AutoSaveEnabled  = true;
     public int  AutoSaveMinutes  = 5;
 
+    // True while Windows High Contrast is active — overrides the chosen theme
+    // visually without changing the user's saved preference.
+    private bool _systemHighContrast;
+
+    /// User-chosen theme: persists the preference, then applies it (or HC if active).
     public void ApplyTheme(string themeId)
+    {
+        if (Themes.All(t => t.Id != themeId)) return;
+        _currentThemeId = themeId;
+        ApplyThemeResources(_systemHighContrast ? "hc" : themeId);
+        SaveSettings();
+    }
+
+    /// Swap the live brushes only — no persistence, no change to _currentThemeId.
+    private void ApplyThemeResources(string themeId)
     {
         var theme = Themes.FirstOrDefault(t => t.Id == themeId);
         if (theme == default) return;
-        _currentThemeId = themeId;
         foreach (var (key, hex) in theme.Colors)
-        {
             if (TryParseHexColor(hex, out var c))
                 Resources[key] = new SolidColorBrush(c);
-        }
-        // update SkiaSharp color caches + stateful buttons
         TypeSkiaCanvas?.InvalidateVisual();
         AlphabetInputCanvas?.InvalidateVisual();
         AlphabetEditCanvas?.InvalidateVisual();
         Dispatcher.InvokeAsync(RefreshToolbarState, System.Windows.Threading.DispatcherPriority.Loaded);
-        SaveSettings();
+    }
+
+    /// Detect Windows High Contrast at startup and follow live changes, without
+    /// overwriting the user's saved theme choice.
+    public void InitHighContrast()
+    {
+        _systemHighContrast = SystemParameters.HighContrast;
+        SystemParameters.StaticPropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(SystemParameters.HighContrast)) return;
+            Dispatcher.Invoke(() =>
+            {
+                _systemHighContrast = SystemParameters.HighContrast;
+                ApplyThemeResources(_systemHighContrast ? "hc" : _currentThemeId);
+            });
+        };
     }
 
 }

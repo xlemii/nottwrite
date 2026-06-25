@@ -52,9 +52,35 @@ public partial class MainWindow
         new(s.Ch, s.Bold, s.Italic, Color.FromArgb(s.A, s.R, s.G, s.B),
             s.RotDeg, s.JitterY, s.VariantIdx, s.Underline, s.Strikethrough, s.ImageId);
 
+    // Legacy single-file store (pre-split). Kept only for one-time migration.
     private static readonly string NotesFilePath = System.IO.Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "nottwrite", "notes.json");
+
+    // New split store: lightweight metadata index + one content file per note +
+    // image files referenced by id. Avoids rewriting the whole library (and
+    // re-serialising base64 images) on every save.
+    private static readonly string NotesDir = System.IO.Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+        "nottwrite", "notes");
+    private static string NotesIndexPath => System.IO.Path.Combine(NotesDir, "index.json");
+    private static string NoteContentPath(string id) => System.IO.Path.Combine(NotesDir, id + ".json");
+    private static string NotesImageDir => System.IO.Path.Combine(NotesDir, "img");
+    private static string NoteImagePath(string imageId) => System.IO.Path.Combine(NotesImageDir, imageId);
+
+    // Per-note content file payload (the heavy part kept out of the index).
+    private record NoteContent(List<SerializableChar> Chars);
+
+    private static readonly JsonSerializerOptions _notesJsonOpts =
+        new() { PropertyNameCaseInsensitive = true };
+
+    private static void AtomicWrite(string path, string json)
+    {
+        string tmp = path + ".tmp";
+        File.WriteAllText(tmp, json);
+        if (File.Exists(path)) File.Replace(tmp, path, null);
+        else File.Move(tmp, path);
+    }
 
     // Cover color pairs: (top, bottom) — notebook gradient palette
     private static readonly (string Top, string Bot, string Accent)[] NoteCovers =
@@ -81,7 +107,7 @@ public partial class MainWindow
     private string?            _pendingRenameId;
 
     private const int NotesBackupCount = 5;
-    private static string NotesBackupPath(int n) => NotesFilePath + ".bak" + n;
+    private static string NotesBackupPath(int n) => NotesIndexPath + ".bak" + n;
     private DateTime _lastNotesBackup = DateTime.MinValue;
 
     private static NotesDocument? TryLoadNotesFrom(string path)
@@ -119,8 +145,10 @@ public partial class MainWindow
         _notes.Clear();
         _folders.Clear();
 
-        // primary file, then fall back through rotating backups on corruption
-        var loaded = TryLoadNotesFrom(NotesFilePath);
+        MigrateLegacyNotesIfNeeded();   // one-time split of old notes.json
+
+        // index (metadata), then fall back through rotating backups on corruption
+        var loaded = TryLoadNotesFrom(NotesIndexPath);
         bool recovered = false;
         if (loaded == null)
         {
@@ -138,17 +166,99 @@ public partial class MainWindow
             _notes = loaded.Notes
                 .Select(n => n.CreatedAt == default ? n with { CreatedAt = n.UpdatedAt } : n)
                 .ToList();
+            LoadAllNoteContents();      // fill Chars from per-note content files
         }
         _notesLoaded = true;
 
-        if (recovered)
-            try { File.WriteAllText(NotesFilePath, JsonSerializer.Serialize(BuildDoc())); } catch { }
+        GcOrphanNoteFiles();            // drop content/image files of removed notes
+        if (recovered) PersistIndex();
 
         RefreshFolderList();
         RefreshNotesGrid();
     }
 
-    private NotesDocument BuildDoc() => new(_folders, _notes);
+    // Read each note's content file into its in-memory Chars (index holds none).
+    private void LoadAllNoteContents()
+    {
+        for (int i = 0; i < _notes.Count; i++)
+        {
+            try
+            {
+                string p = NoteContentPath(_notes[i].Id);
+                if (!File.Exists(p)) continue;
+                var c = JsonSerializer.Deserialize<NoteContent>(File.ReadAllText(p), _notesJsonOpts);
+                if (c?.Chars != null) _notes[i] = _notes[i] with { Chars = c.Chars };
+            }
+            catch { }   // a corrupt single note becomes empty, never crashes load
+        }
+    }
+
+    // Delete content/image files no longer referenced by any live note.
+    // Safe vs. delete-undo: undo is session-only, so true deletions are swept
+    // only on the next launch.
+    private void GcOrphanNoteFiles()
+    {
+        try
+        {
+            if (!Directory.Exists(NotesDir)) return;
+            var liveIds = _notes.Select(n => n.Id).ToHashSet();
+            foreach (var f in Directory.GetFiles(NotesDir, "*.json*"))
+            {
+                string name = System.IO.Path.GetFileName(f);
+                if (name.StartsWith("index.json")) continue;
+                string id = name.Split('.')[0];
+                if (!liveIds.Contains(id)) { try { File.Delete(f); } catch { } }
+            }
+            if (Directory.Exists(NotesImageDir))
+            {
+                var usedImg = _notes.SelectMany(n => n.Chars ?? new())
+                    .Where(c => c.ImageId != null).Select(c => c.ImageId!).ToHashSet();
+                foreach (var f in Directory.GetFiles(NotesImageDir))
+                {
+                    string name = System.IO.Path.GetFileName(f);
+                    string id = name.EndsWith(".tmp") ? name[..^4] : name;
+                    if (!usedImg.Contains(id)) { try { File.Delete(f); } catch { } }
+                }
+            }
+        }
+        catch { }
+    }
+
+    // One-time migration: split a legacy notes.json into index + per-note files +
+    // image files. Keeps the original as notes.json.migrated for safety.
+    private void MigrateLegacyNotesIfNeeded()
+    {
+        try
+        {
+            if (File.Exists(NotesIndexPath)) return;     // already migrated / new install
+            var legacy = TryLoadNotesFrom(NotesFilePath);
+            if (legacy == null)
+                for (int i = 1; i <= NotesBackupCount; i++)
+                {
+                    legacy = TryLoadNotesFrom(NotesFilePath + ".bak" + i);
+                    if (legacy != null) break;
+                }
+            if (legacy == null) return;                  // nothing to migrate
+
+            Directory.CreateDirectory(NotesDir);
+            Directory.CreateDirectory(NotesImageDir);
+            foreach (var n in legacy.Notes)
+            {
+                try { AtomicWrite(NoteContentPath(n.Id), JsonSerializer.Serialize(new NoteContent(n.Chars ?? new()))); }
+                catch { }
+                if (n.Images != null)
+                    foreach (var (imgId, b64) in n.Images)
+                        try { File.WriteAllBytes(NoteImagePath(imgId), Convert.FromBase64String(b64)); }
+                        catch { }
+            }
+            var meta = legacy.Notes.Select(n => n with { Chars = new(), Images = null }).ToList();
+            AtomicWrite(NotesIndexPath, JsonSerializer.Serialize(new NotesDocument(legacy.Folders, meta)));
+
+            try { if (File.Exists(NotesFilePath)) File.Move(NotesFilePath, NotesFilePath + ".migrated", true); }
+            catch { }
+        }
+        catch { }
+    }
 
     // ── Per-note font binding ─────────────────────────────────────
     // A note renders with the font it was written in, not the global one.
@@ -196,36 +306,61 @@ public partial class MainWindow
             Chars     = _typeChars.Select(ToSerial).ToList(),
             UpdatedAt = DateTime.Now,
         };
+        PersistNoteContent(_currentNoteId);
         PersistNotes();
         NotesSavedLabel.Text = "Saved";
+        SetSaveState(true);
     }
 
-    private void PersistNotes()
+    // Metadata-only persistence (folders + note metadata, no Chars/images).
+    // Cheap and small — this is what all the library/folder/tag/reorder paths hit.
+    private void PersistNotes() => PersistIndex();
+
+    // True once a save has failed, until the next success — so repeated autosave
+    // failures surface a single toast instead of spamming on every keystroke.
+    private bool _notesSaveErrorShown;
+
+    private void NotesSaveFailed(Exception ex)
+    {
+        if (_notesSaveErrorShown) return;
+        _notesSaveErrorShown = true;
+        ShowToast("Couldn't save notes: " + ex.Message, ToastKind.Error);
+    }
+
+    private void PersistIndex()
     {
         try
         {
-            Directory.CreateDirectory(System.IO.Path.GetDirectoryName(NotesFilePath)!);
-            RotateNotesBackup();                       // snapshot previous state (time-gated)
-
-            // atomic write: temp file then swap, so a crash mid-write can't corrupt notes.json
-            string json = JsonSerializer.Serialize(BuildDoc());
-            string tmp  = NotesFilePath + ".tmp";
-            File.WriteAllText(tmp, json);
-            if (File.Exists(NotesFilePath))
-                File.Replace(tmp, NotesFilePath, null);
-            else
-                File.Move(tmp, NotesFilePath);
+            Directory.CreateDirectory(NotesDir);
+            RotateNotesBackup();                       // snapshot index (time-gated)
+            var meta = _notes.Select(n => n with { Chars = new(), Images = null }).ToList();
+            AtomicWrite(NotesIndexPath, JsonSerializer.Serialize(new NotesDocument(_folders, meta)));
+            _notesSaveErrorShown = false;              // a save got through
         }
-        catch { }
+        catch (Exception ex) { NotesSaveFailed(ex); }
     }
 
-    // Copy the current notes.json into a rotating set of 5 backups.
+    // Write a single note's content file (the only thing that grows with text).
+    private void PersistNoteContent(string id)
+    {
+        try
+        {
+            var n = _notes.FirstOrDefault(x => x.Id == id);
+            if (n == null) return;
+            Directory.CreateDirectory(NotesDir);
+            AtomicWrite(NoteContentPath(id), JsonSerializer.Serialize(new NoteContent(n.Chars ?? new())));
+            _notesSaveErrorShown = false;              // a save got through
+        }
+        catch (Exception ex) { NotesSaveFailed(ex); }
+    }
+
+    // Copy the current index.json into a rotating set of 5 backups.
     // Time-gated to ~every 2 min so the 5 slots span time, not one keystroke burst.
     private void RotateNotesBackup()
     {
         try
         {
-            if (!File.Exists(NotesFilePath)) return;
+            if (!File.Exists(NotesIndexPath)) return;
             if (DateTime.Now - _lastNotesBackup < TimeSpan.FromMinutes(2)) return;
             _lastNotesBackup = DateTime.Now;
 
@@ -235,7 +370,7 @@ public partial class MainWindow
                 string src = NotesBackupPath(i);
                 if (File.Exists(src)) File.Copy(src, NotesBackupPath(i + 1), true);
             }
-            File.Copy(NotesFilePath, NotesBackupPath(1), true);
+            File.Copy(NotesIndexPath, NotesBackupPath(1), true);
         }
         catch { }
     }
@@ -245,6 +380,7 @@ public partial class MainWindow
         if (_currentNoteId != null && _appMode == AppMode.Type)
             SaveCurrentNoteIfOpen();
         _currentNoteId = null;
+        SetSaveState(true);   // hides the panel (no active note)
         RefreshNotesGrid();
     }
 
@@ -283,6 +419,7 @@ public partial class MainWindow
         NoteTitleBox.Text = note.Title;
         _notesDirty = false;
         NotesSavedLabel.Text = "";
+        SetSaveState(true);
 
         if (_appMode != AppMode.Type)
             SwitchMode(AppMode.Type);
@@ -454,6 +591,7 @@ public partial class MainWindow
         if (idx >= 0 && _tabSnapshots.TryGetValue(id, out var snap))
         {
             _notes[idx] = _notes[idx] with { Chars = snap, UpdatedAt = DateTime.Now };
+            PersistNoteContent(id);
             PersistNotes();
         }
         _dirtyTabs.Remove(id);
@@ -600,6 +738,14 @@ public partial class MainWindow
         };
         wrapper.Children.Add(coverHolder);
         wrapper.Children.Add(label);
+        System.Windows.Automation.AutomationProperties.SetName(wrapper, $"Note: {note.Title}");
+        // Keyboard access: focusable, visible focus ring, Enter/Space opens it.
+        wrapper.Focusable = true;
+        wrapper.FocusVisualStyle = (Style)Application.Current.FindResource("CardFocusVisual");
+        wrapper.KeyDown += (_, ke) =>
+        {
+            if (ke.Key is Key.Enter or Key.Space) { ke.Handled = true; ShowEditor(id); }
+        };
 
         bool dblPending = false;
         wrapper.PreviewMouseLeftButtonDown += (_, e) =>
@@ -960,10 +1106,11 @@ public partial class MainWindow
             UpdatedAt = DateTime.Now,
             Template  = CurrentTemplate,
             FontName  = _typeFontName,
-            Images    = CollectNoteImages(),
         };
+        PersistNoteContent(_currentNoteId);
         PersistNotes();
         NotesSavedLabel.Text = "Saved";
+        SetSaveState(true);
         if (_currentNoteId != null) _dirtyTabs.Remove(_currentNoteId);
         RefreshTabBar();
     }
@@ -982,6 +1129,7 @@ public partial class MainWindow
             CreatedAt: now, FolderId: _activeFolderId,
             Template: CurrentTemplate, FontName: _typeFontName);
         _notes.Insert(0, note);
+        PersistNoteContent(note.Id);
         PersistNotes();
         ShowEditor(note.Id);
     }
@@ -1094,10 +1242,23 @@ public partial class MainWindow
         ScheduleNoteSave();
     }
 
-    private void NoteContent_Changed(object sender, TextChangedEventArgs e) { }
+    // Visible autosave status in the note toolbar (replaces the off-screen label).
+    private void SetSaveState(bool saved)
+    {
+        if (SaveStatePanel == null) return;
+        SaveStatePanel.Visibility = (_appMode == AppMode.Type && _currentNoteId != null)
+            ? Visibility.Visible : Visibility.Collapsed;
+        SaveStateLabel.Text = saved ? T("Saved") : T("Saving…");
+        SaveStateDot.Fill   = saved ? GetBrush("SuccessBrush") : GetBrush("WarningBrush");
+        // title-bar unsaved dot: visible only when there's an active note with pending changes
+        if (TitleUnsavedDot != null)
+            TitleUnsavedDot.Visibility = (!saved && _currentNoteId != null)
+                ? Visibility.Visible : Visibility.Collapsed;
+    }
 
     private void ScheduleNoteSave()
     {
+        SetSaveState(false);
         if (_notesSaveTimer == null)
         {
             _notesSaveTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1.5) };
@@ -1465,11 +1626,6 @@ public partial class MainWindow
         PersistNotes();
         RefreshNotesGrid();
         RefreshTabBar();
-    }
-
-    private void ColorPickerCancel_Click(object sender, RoutedEventArgs e)
-    {
-        ColorPickerOverlay.Visibility = Visibility.Collapsed;
     }
 
 }

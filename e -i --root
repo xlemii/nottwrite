@@ -1,0 +1,178 @@
+[33mcommit 1fae651a20cd36f9c25ef9335f5b9539aead2b56[m
+tree 8dbce6a17eb6a5decaaea961bb3cb3e20bbd173b
+parent 5d06d8357a0a0d8e9014ee04767e0dc4e338fec1
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782336147 +0200
+committer lemiis <41639769+xlemii@users.noreply.github.com> 1782336147 +0200
+
+    refactor: rename project to nottwrite + UX/accessibility pass
+    
+    - Rename HandwritingFontCreator.* projects/solution to nottwrite.*;
+      drop unused Rendering/Storage projects and stale build dirs
+    - Add font-readiness banner in Type mode when the drawn font is incomplete
+    - Accessibility: WCAG-AA SecondaryText contrast across all themes,
+      keyboard focus rings, AutomationProperties.Name on icon-only buttons
+    - Raise tiny 8-10px UI text to a readable 11px base
+    - Fix crash saving glyphs whose char is illegal in a Windows filename;
+      guard SaveEditActiveChar against IO errors with a toast
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+[33mcommit 5d06d8357a0a0d8e9014ee04767e0dc4e338fec1[m
+tree 25df484d8562a623586e924d41dbf88b4b0a6738
+parent 994c842646317bcb3dddb301aa28a2cfc7d96799
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782247246 +0200
+committer lemiis <41639769+xlemii@users.noreply.github.com> 1782247246 +0200
+
+    feat: real .ttf font export, notes library, command palette, pen pressure + major UX overhaul
+    
+    Fonts
+    - Export drawn glyphs to a genuine installable TrueType .ttf (pure-C# writer)
+    - Import .ttf/.otf back into an editable template
+    - Pen/stylus pressure (Windows Ink) baked into glyphs and exported font
+    - Live pangram preview; per-range export; system-font fallback for missing glyphs
+    
+    Notes
+    - Folders/categories in sidebar, Home with recently-opened + favorites strips
+    - Search, tags, drag-and-drop ordering, sort modes
+    - Per-note font binding, rotating backups + atomic save, per-note undo
+    - Undo for note/folder deletion via toast
+    
+    UX/UI
+    - First-run onboarding tour, command palette (Ctrl+K)
+    - Toast notification system, global glyph-progress counter
+    - Central design system in App.xaml; restyled Save As, Edit panel, scrollbars
+    - Templates seeded to %APPDATA% (no more hardcoded path); settings in preferences.json
+    
+    Refactor
+    - Split monolithic MainWindow.xaml.cs into concern-based partial classes
+    - Fixed mojibake, dead-code warnings, settings file collision
+    
+    Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+
+[33mcommit 994c842646317bcb3dddb301aa28a2cfc7d96799[m
+tree 772916c0c85821818699eadfcd125b872184aebe
+parent 40ff493a83301b111d21c8e35faeefdcf8b0e797
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782167972 +0200
+committer GitHub <noreply@github.com> 1782167972 +0200
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqObmkCRC1aQ7uu5UhlAAAvWMQAJmLjTgOrIXB3cJHNdA50g18
+ hUIBMLs7LPRQ+isFWaTskjtIN2IIBOLe5Su44BiIC1oFUdXgOse+hFg5T2GYl+4w
+ gz2XA0gefHTRRqtWskQK0tK+wclqT3FSAYqqTd4p6sFTbep6PcznsZ+z4Or1bEo6
+ 34PcLq77Jr7VZP6N5fn7VPlaPRqzfOLTonxAv6kO5e9Zy5BcUCU0Axxd2Ek3zhes
+ UzVFTAZV2qevOpWu4e9W5eifjmDqDJZqfhtWdzf3jKdNXlNDnzXefAwcEq0CTFjO
+ BN3uR+UM9nQf/+YJps/U6800GJ7pCleLAr3UX3KCB8+zNMTdIEHYs1kTXgQS3Ipi
+ 8l91d0DQXKJB7sTfUopbPVEYFeJVh6WaXC+/GuV4b1qeBQkMRBXtnxgMeBLAL8xv
+ bs83aAzAAu+oXgzVW0uYhOoTCd4evOPiefJ4PEx56+OqpE8dZeHpjNuyeOmLJ0O2
+ ubdAgS+OOnkdWlXfU1T7/V4iFAhDp8+8DuKmRh2C3daVbvopl8zSSXf1ADEJxfBO
+ AbdIZ8J9l4Ft9X9vkOwiUh+QaJWoxtNe7jdL+AnUJZ5U5jl7WIFlW09auIgW9+Aj
+ J6bK9dicxZHnx6R8CzNGOmx9eJXEBzGqPMjHgFUhZZHlAmwZHdMr93xkv8CWlVD0
+ Q9IW7+aBZAzAnhl39yyu
+ =NUJ5
+ -----END PGP SIGNATURE-----
+ 
+
+    Update contact information for reporting incidents
+
+[33mcommit 40ff493a83301b111d21c8e35faeefdcf8b0e797[m
+tree 22d71bb66d18987631f97536a072d28d4f23bcd8
+parent cd7e585f811c31098314a53275e80e289cb865ca
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782167861 +0200
+committer GitHub <noreply@github.com> 1782167861 +0200
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqObk2CRC1aQ7uu5UhlAAAGBAQABYip3/w8HnqnHNKw8H7sx4y
+ XuWTLnuymWNJ+M7sR0QIxWToMXa2pba635Tn83YoSvr8UvJgpIU+swqBhuBjRucb
+ dqpccq3HpG2KOOSrDklTLW/MsQT91u7lddXnD+vKayuMQs5f18P8NnPJOLVXED9j
+ xB0m3Oc8KcopfhPb1iFbZlRSZhS4aR6Nbv+XnATFDrqGSAWBziUgrdEiwPOeIJBV
+ A0JRr0oR/E2WLT/PRFwK7R+mswIuujzXTYgeis7Kd7RPS4roJdEYOWVw6IHNxCGK
+ 8WkLaUeLpKXCaWMukY2JA/0CnCGTrJMP55Y3wASZKzOttsYcOyGYJ1h5I9Pm5uBv
+ yMijgWNSHdoaCr2Ta7hnfZ9+3pOTSesPUISsi6jkP9nW8q8HpcEQSlBX67ULOqAp
+ K/U/hqAM6Gu8201oYKADxPGiKo9eSHXg6FWKhxOGMHfPndRYFta8+EqojsdI8F9Z
+ IeIXBJiOUtq5/wLx0noaDNiG0kqt+YZtApyxIl9vxqWC3KiWo9/UIt1AsU2lqNyQ
+ GRtO00ydTPgnousUnzAKBpc9NOKKOtW2NKELheMGsLv7rX4PdUHjBWWv1mrJQBg2
+ DQTXEFcm8LFzRvpatQjyK8T8/JNWmtUsPGbCfwR6mAZ5Q2cJOxIAjIL4ruO69Y/p
+ hOPJ6u64BFckruFucKrU
+ =QvTv
+ -----END PGP SIGNATURE-----
+ 
+
+    Add Contributor Covenant Code of Conduct
+
+[33mcommit cd7e585f811c31098314a53275e80e289cb865ca[m
+tree b89f27a662c3aaf0b379553a5945d521f52c5544
+parent 4f6d946e820c2964fbe6113ae111ef58c3f73e82
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782075419 +0200
+committer GitHub <noreply@github.com> 1782075419 +0200
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqOFAbCRC1aQ7uu5UhlAAABLcQABuh8pHliHKujzze1Oky3nmg
+ oGNSHm84lMPFzx1nbBFEWmjlvlD4nEilQ2OacnzpK6jaxRn/bTbj5xd5YBGxYTx2
+ +8HnHxEQmsKJV8whaZYzxA+MRYY9BCJFnmKGSFj95DEjAtMTj06PjHm18VwSG1Yg
+ mzd7dR2YF4vTxoeKFYK6mM3r/WgLybJl0MabD5R8HPo9rtTOaeLRpdqq4Wf9/FX1
+ KvDBGZCwedKQKG2xMl2kkIlIqfx8+vwJ992Smu+/Zbu2FXXDirjduetXyjxabAjM
+ PODnWseXPGowY3Ps0/K+HR03E4Bjm2eDfFdbdxaoJMgh4U3ppKMukweqXzbn4Bs6
+ TiTzmwd1aJBefP5H8OuSCfrX//JAuzli8xPnMGaG5Zdd0C2FRyjrIlkMU7k++/Dg
+ sLC414NG2o9VXoRPsaK9Fnzf7jq+1sC1InUAcHAPfU6f1X+eh15M9qWw0O8PGMAq
+ 75SfZwaSRaZcD4nSxx5uhQqIEztzyQhG2Kck1H0K+MZ7SCD9iv1PaekTp94C4S7U
+ gerbLxJgT/BmBVKowGvIYCkjuOyhYjoYOw1hoe9gTn2DA2ZuvAuNwoVwkfs4QxnI
+ 7rxtUpWMWmyZJodoRtTTpt9Vmd55p985JepdOiM7lEAUMoHkAnuRtfWnIMZzv79L
+ kvGa8M7agYpdxJuN1w0G
+ =oi2C
+ -----END PGP SIGNATURE-----
+ 
+
+    Remove screenshot from README
+    
+    Removed screenshot from README.
+
+[33mcommit 4f6d946e820c2964fbe6113ae111ef58c3f73e82[m
+tree 29b80aa4dc1470159e18059cd7d1c8befd44b397
+parent fc1082683f02626d5867c0a0218b07998ce112f9
+parent f19b3590887a371cea1268725e21768b9cc9d650
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782075343 +0200
+committer lemiis <41639769+xlemii@users.noreply.github.com> 1782075343 +0200
+
+    improved visuals and system
+
+[33mcommit fc1082683f02626d5867c0a0218b07998ce112f9[m
+tree 9b51bd5418d59556f286a78abd5ba41f18d0f000
+parent 5b650cd8344d3d1c6b04c1f657a5ec11f55b80f6
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782075253 +0200
+committer lemiis <41639769+xlemii@users.noreply.github.com> 1782075253 +0200
+
+    improved visuals and system
+
+[33mcommit f19b3590887a371cea1268725e21768b9cc9d650[m
+tree 62283102ca3c44707b1a5f2bdc0a943ff613cb09
+parent 5b650cd8344d3d1c6b04c1f657a5ec11f55b80f6
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782072951 +0200
+committer GitHub <noreply@github.com> 1782072951 +0200
+gpgsig -----BEGIN PGP SIGNATURE-----
+ 
+ wsFcBAABCAAQBQJqOEZ4CRC1aQ7uu5UhlAAA8fIQAH4eSCfwbK4LcnfiaKobfpmt
+ dkjcF5Wvim57KPzM4Mqxn3lqSYDUN0xMhBJARCeDCEHYbzDJVnCdDdu3rcRMNAU0
+ AgEoo6Dy5b5jcOsimHBHmwRckmGbMvrWEMcq46UQQl+kXAKOSD/Lf+By/O8o7o3m
+ utcnbfGC/zGOHEW1uP27rd0Le8/WHdBqN7dBgug+0Sr4z6+woE5yw3PYOO73vVmt
+ jFR3On+WP3X0o9CwVutCTsscFSEJaZgIN99GLKcrnrESvAx+2ENpmaZ30CvhFuxF
+ ALnLRbOzVWshWdnXyZZu3vzGvkn7kxB4ojI1wvE1hg/fglaDuci2fHcH8W5IGf4h
+ Zk95NbPvOfmNK7nRV2MsM+2nVpEhcO9yzQm4+Iqy/9zOydXdTHbQScbEEcw0/+hQ
+ jdjB5gieqh/WPkXltx0Cpv06f6SuGqhfOxiCp0OZ8kfJC4Am4kbn0xSHfR8bM8XD
+ W37jGVsz0JscWq4tgGiPXjVAid9CdSnVDpFDH9QfAPHJcZdCXrA1JBjoberJ8Tpu
+ 3ZQHVnjWezXv8Wg/vAtITTI/9F8NxaXAdBxjVW2ZQH8CFAYCRJ9oAxzCZCWn+rah
+ CuE9Le81p89PFQyCvr4qtdYojzZgYM9f1gRxFUNSJMC0OB/ATw6bWmLuRLOgadXt
+ OX1iai+VrOBHp4dg+kDB
+ =xXsO
+ -----END PGP SIGNATURE-----
+ 
+
+    Add MIT License to the project
+
+[33mcommit 5b650cd8344d3d1c6b04c1f657a5ec11f55b80f6[m
+tree b4e65d32a0678a4a76f18fd0d6af38e476013a01
+parent c82472da5357c48826c21d17b7921b33856f9f0b
+author lemiis <41639769+xlemii@users.noreply.github.com> 1782002876 +0200
+committer lemiis <41639769+xlemii@users.noreply.github.com> 1782002876 +0200
+
+    updated visuals
+

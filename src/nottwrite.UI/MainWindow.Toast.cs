@@ -19,7 +19,8 @@ public partial class MainWindow
         string? actionLabel = null, Action? action = null)
     {
         if (ToastHost == null) return;
-        if (actionLabel != null) seconds = Math.Max(seconds, 5.0);   // give time to click
+        message = T(message);                                        // localize static toasts
+        if (actionLabel != null) { actionLabel = T(actionLabel); seconds = Math.Max(seconds, 5.0); }
 
         var (accent, icon) = kind switch
         {

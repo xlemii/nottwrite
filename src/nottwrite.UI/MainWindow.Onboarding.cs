@@ -6,16 +6,16 @@ namespace nottwrite.UI;
 
 public partial class MainWindow
 {
+    // Two steps: a one-line identity, then an intent chooser that drops the user
+    // straight into the right mode (instead of a generic feature tour).
+    private const int IntentStep = 1;
+
     private readonly (string Icon, string Title, string Body)[] _onboardingSteps =
     {
         ("✍", "Welcome to nottwrite",
-         "Turn your own handwriting into a real font you can install and type with anywhere — Word, the browser, anywhere."),
-        ("✏", "1 · Draw your letters",
-         "Open Edit mode and draw each character once on the grid. A pen or stylus gives the most natural result. The live preview shows your font as you go."),
-        ("↓", "2 · Export your font",
-         "When enough letters are drawn, hit Export .ttf in the Template panel. Install the file and your handwriting works system-wide."),
-        ("\U0001F4D3", "3 · Write notes in your hand",
-         "Use Type and Notes to write whole pages in your font, organise them in folders, and export to PNG, PDF or SVG."),
+         "nottwrite turns your handwriting into a font — and lets you write notes and pages in it."),
+        ("\U0001F44B", "What would you like to do?",
+         "You can switch anytime from the sidebar. Pick where to start:"),
     };
 
     private int _onboardingStep;
@@ -32,11 +32,15 @@ public partial class MainWindow
     {
         var (icon, title, body) = _onboardingSteps[_onboardingStep];
         ObIcon.Text  = icon;
-        ObTitle.Text = title;
-        ObBody.Text  = body;
-        ObNextBtn.Content = _onboardingStep == _onboardingSteps.Length - 1 ? "Get started" : "Next";
-        ObSkipBtn.Visibility = _onboardingStep == _onboardingSteps.Length - 1
-            ? Visibility.Hidden : Visibility.Visible;
+        ObTitle.Text = T(title);
+        ObBody.Text  = T(body);
+
+        bool intent = _onboardingStep == IntentStep;
+        ObIntentPanel.Visibility = intent ? Visibility.Visible : Visibility.Collapsed;
+        // On the intent step the choice itself advances — no Next button.
+        ObNextBtn.Visibility = intent ? Visibility.Collapsed : Visibility.Visible;
+        ObNextBtn.Content    = T(_onboardingStep == _onboardingSteps.Length - 1 ? "Get started" : "Next");
+        ObSkipBtn.Visibility = Visibility.Visible;
 
         ObDots.Children.Clear();
         for (int i = 0; i < _onboardingSteps.Length; i++)
@@ -61,17 +65,24 @@ public partial class MainWindow
         }
         else
         {
-            FinishOnboarding(jumpToEdit: true);
+            FinishOnboarding(null);
         }
     }
 
-    private void Onboarding_Skip(object sender, RoutedEventArgs e) => FinishOnboarding(jumpToEdit: false);
+    private void Onboarding_PickIntent(object sender, RoutedEventArgs e)
+    {
+        var mode = (sender as FrameworkElement)?.Tag as string == "edit"
+            ? AppMode.Edit : AppMode.Notes;
+        FinishOnboarding(mode);
+    }
 
-    private void FinishOnboarding(bool jumpToEdit)
+    private void Onboarding_Skip(object sender, RoutedEventArgs e) => FinishOnboarding(null);
+
+    private void FinishOnboarding(AppMode? jumpTo)
     {
         OnboardingOverlay.Visibility = Visibility.Collapsed;
         OnboardingSeen = true;
         SaveSettings();
-        if (jumpToEdit) SwitchMode(AppMode.Edit);
+        if (jumpTo is { } mode) SwitchMode(mode);
     }
 }

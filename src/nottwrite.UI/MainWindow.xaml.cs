@@ -26,13 +26,13 @@ public partial class MainWindow : Window
     private string CurrentTemplate   = "Default";
     private string _defaultTemplate  = "Default";
     private string CurrentCharacter = "A";
-    private Button? _selectedCharacterButton;
     private bool _hasUnsavedChanges;
     private int _lineSpacing      = 100;
     private double _lineThickness = 1.0;
     private double _fontSize      = 180.0;
     private int  _currentVariant  = 1;
     private bool _showGhost       = true;
+    private bool _showGuides      = true;
     private double _taperAmount     = 0.0;
     private double _tipRoundness   = 1.0;
     private double _strokeWidth     = 3.5;
@@ -74,8 +74,13 @@ public partial class MainWindow : Window
     private const int PaperInnerV  = 44;
 
     // ── Edit grid ──────────────────────────────────────────────────────
-    private const int GridCellW = 150;
-    private const int GridCellH = 170;
+    private const int GridCellWBase = 150;
+    private const int GridCellHBase = 170;
+    private double _editZoom = 1.0;   // Ctrl+wheel zoom for fine detail (0.5–4×)
+    // Cell size scales with zoom so Skia renders crisply (not raster-scaled) and
+    // mouse→cell mapping stays exact — every consumer reads these.
+    private int GridCellW => (int)(GridCellWBase * _editZoom);
+    private int GridCellH => (int)(GridCellHBase * _editZoom);
     private char _editActiveChar = 'A';
     private List<Point>? _editCurrentStroke;
     private bool _isDrawingOnGrid;
@@ -88,33 +93,87 @@ public partial class MainWindow : Window
     private double _penPressure = 1.0;
     private double CurrentInputPressure => _penActive ? _penPressure : 1.0;
 
+    private static bool IsTouch(System.Windows.Input.StylusDevice? d) =>
+        d?.TabletDevice?.Type == System.Windows.Input.TabletDeviceType.Touch;
+
+    // Pen draws natively: every coalesced stylus point is captured (full
+    // resolution + per-point pressure), and mouse promotion is suppressed.
+    // Finger touches are ignored so a resting hand can't add stray strokes.
     private void Alphabet_StylusDown(object sender, System.Windows.Input.StylusDownEventArgs e)
     {
+        if (IsTouch(e.StylusDevice)) return;          // palm/finger rejection
         _penActive = true;
-        UpdatePenPressure(e.GetStylusPoints(AlphabetInputCanvas));
+        var pts = e.GetStylusPoints(AlphabetInputCanvas);
+        UpdatePenPressure(pts);
+        if (pts.Count > 0 && BeginGridStroke(MapInput(pts[^1].ToPoint()), _penPressure))
+            AlphabetInputCanvas.CaptureStylus();
+        e.Handled = true;
     }
     private void Alphabet_StylusMove(object sender, System.Windows.Input.StylusEventArgs e)
     {
-        if (!_penActive) return;
-        UpdatePenPressure(e.GetStylusPoints(AlphabetInputCanvas));
+        if (!_penActive || IsTouch(e.StylusDevice)) return;
+        var pts = e.GetStylusPoints(AlphabetInputCanvas);
+        foreach (var sp in pts)
+        {
+            _penPressure = PenWidthFactor(sp);   // pressure + tilt
+            ContinueGridStroke(MapInput(sp.ToPoint()), _penPressure);
+        }
+        e.Handled = true;
     }
-    private void Alphabet_StylusUp(object sender, System.Windows.Input.StylusEventArgs e) => _penActive = false;
+    private void Alphabet_StylusUp(object sender, System.Windows.Input.StylusEventArgs e)
+    {
+        if (IsTouch(e.StylusDevice)) return;
+        _penActive = false;
+        AlphabetInputCanvas.ReleaseStylusCapture();
+        EndGridStroke();
+        e.Handled = true;
+    }
 
     private void UpdatePenPressure(System.Windows.Input.StylusPointCollection pts)
     {
         if (pts.Count == 0) return;
-        float pf = pts[^1].PressureFactor;   // 0..1
-        // map to half-width factor: light touch thin, hard touch slightly bold
-        _penPressure = 0.4 + 1.0 * pf;
+        _penPressure = PenWidthFactor(pts[^1]);
+    }
+
+    // Combined stroke-width factor: pressure (light→thin, hard→bold) plus a tilt
+    // boost — leaning the pen widens the stroke like a flattened nib. Tilt is
+    // device-dependent; absent it, this reduces to the pressure-only behaviour.
+    private double PenWidthFactor(System.Windows.Input.StylusPoint sp)
+    {
+        double w = 0.4 + 1.0 * sp.PressureFactor;        // 0..1 pressure
+        w += 0.55 * PenTilt(sp);                          // 0..~0.55 tilt boost
+        return Math.Clamp(w, 0.3, 2.2);
+    }
+
+    // Tilt magnitude 0 (upright) .. 1 (fully leaned), from the digitizer's
+    // X/Y tilt orientation, normalised via the point's property range.
+    private static double PenTilt(System.Windows.Input.StylusPoint sp)
+    {
+        try
+        {
+            var d = sp.Description;
+            if (!d.HasProperty(System.Windows.Input.StylusPointProperties.XTiltOrientation) ||
+                !d.HasProperty(System.Windows.Input.StylusPointProperties.YTiltOrientation))
+                return 0;
+            double tx = NormTilt(sp, System.Windows.Input.StylusPointProperties.XTiltOrientation);
+            double ty = NormTilt(sp, System.Windows.Input.StylusPointProperties.YTiltOrientation);
+            return Math.Min(1.0, Math.Sqrt(tx * tx + ty * ty));
+        }
+        catch { return 0; }
+    }
+
+    private static double NormTilt(System.Windows.Input.StylusPoint sp,
+                                   System.Windows.Input.StylusPointProperty prop)
+    {
+        var info = sp.Description.GetPropertyInfo(prop);
+        double range = info.Maximum - info.Minimum;
+        if (range <= 0) return 0;
+        double t = (sp.GetPropertyValue(prop) - (double)info.Minimum) / range; // 0..1
+        return t * 2 - 1;   // -1..1, 0 ≈ upright
     }
     private Point _editCellOrigin;
     private Dictionary<char, (List<List<Point>> strokes, double fileW, double fileH)> _charCache = new();
     private Dictionary<char, System.Windows.Media.Color> _editCharColors = new();
-
-    // ── Inline color picker ───────────────────────────────────────────
-    private float _cpHue = 0f, _cpSat = 0f, _cpVal = 0.91f;
-    private bool _cpDraggingSv = false, _cpDraggingHue = false;
-    private bool _cpUpdating = false;
 
     // ── Brush options ─────────────────────────────────────────────────
     private enum BrushShape { Round, Flat, Calligraphy, Triangle, Ink, Chisel }
@@ -125,7 +184,6 @@ public partial class MainWindow : Window
     private double _calligraphyAngle = 45.0;
     private SKColor _editStrokeColor = new SKColor(0xE8, 0xE8, 0xE8);
     private bool _taperEnabled = false;
-    private bool _isFirstMouseDown = true;
 
     // ── Speech recognition ─────────────────────────────────────────
     private bool _isListening = false;
@@ -350,7 +408,7 @@ public partial class MainWindow : Window
     private void SttLang_Changed(object sender, System.Windows.Controls.SelectionChangedEventArgs e)
     {
         if (SttLangCombo?.SelectedItem is System.Windows.Controls.ComboBoxItem item)
-            _sttLang = item.Content.ToString() ?? "pl";
+            _sttLang = item.Content.ToString() ?? "en";
     }
 
     private void SavePenSettings()
@@ -414,25 +472,6 @@ public partial class MainWindow : Window
         catch { /* ignore corrupt settings */ }
     }
 
-    private void VarBtn_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button btn) return;
-        if (!int.TryParse(btn.Tag?.ToString(), out int v)) return;
-        if (_hasUnsavedChanges) SaveEditActiveChar();
-        _currentVariant = v;
-        UpdateVariantButtons();
-        LoadEditActiveChar();
-    }
-
-    private void UpdateVariantButtons()
-    {
-        var accent = GetBrush("AccentBrush");
-        var normal = GetBrush("ButtonBg");
-        Var1Btn.Background = _currentVariant == 1 ? accent : normal;
-        Var2Btn.Background = _currentVariant == 2 ? accent : normal;
-        Var3Btn.Background = _currentVariant == 3 ? accent : normal;
-    }
-
     private void GhostToggle_Click(object sender, RoutedEventArgs e)
     {
         _showGhost = !_showGhost;
@@ -440,14 +479,22 @@ public partial class MainWindow : Window
         AlphabetEditCanvas?.InvalidateVisual();
     }
 
-    private void DrawOptionsToggle_Click(object sender, RoutedEventArgs e)
+    private void GuidesToggle_Click(object sender, RoutedEventArgs e)
     {
-        // DrawOptionsPanel hidden in compat area — no-op for edit mode
+        _showGuides = !_showGuides;
+        GuidesToggleBtn.Background = _showGuides ? GetBrush("AccentBrush") : GetBrush("ButtonBg");
+        AlphabetEditCanvas?.InvalidateVisual();
     }
 
-    // ─── Custom char add ─────────────────────────────────────────
-    private void AddCustomChar_Click(object sender, RoutedEventArgs e) =>
-        CustomCharInput.Focus();
+    private void FocusModeToggle_Click(object sender, RoutedEventArgs e)
+    {
+        if (_hasUnsavedChanges) SaveEditActiveChar();
+        _focusMode = !_focusMode;
+        FocusModeBtn.Background = _focusMode ? GetBrush("AccentBrush") : GetBrush("ButtonBg");
+        AlphabetScrollViewer.ScrollToVerticalOffset(0);
+        UpdateAlphabetGridHeight();
+        AlphabetEditCanvas?.InvalidateVisual();
+    }
 
     private void TaperSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -524,55 +571,6 @@ public partial class MainWindow : Window
         RefreshGeneratedText();
     }
 
-    private void CustomCharInput_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        if (!_resourcesReady) return;
-        string txt = CustomCharInput.Text;
-        if (string.IsNullOrEmpty(txt)) return;
-        char c = txt[0];
-        CustomCharInput.Text = "";
-
-        if (!AllChars.Contains(c))
-        {
-            _customChars.Add(c);
-            SaveCustomChars();
-            CreateCharacterGrid();
-        }
-
-        SelectCharInGrid(c);
-    }
-
-    private void SelectCharInGrid(char c)
-    {
-        char upper = char.ToUpper(c);
-        char lower = char.ToLower(c);
-
-        foreach (Button btn in CharacterGrid.Children.OfType<Button>())
-        {
-            if (btn.Tag is not (char primary, char secondary)) continue;
-            if (primary == c || secondary == c || primary == upper || primary == lower)
-            {
-                if (_hasUnsavedChanges) SaveEditActiveChar();
-
-                if (_selectedCharacterButton != null && _selectedCharacterButton != btn)
-                {
-                    var (op, os) = ((char, char))_selectedCharacterButton.Tag;
-                    bool oe = CharacterExists(op.ToString()) || (os != '\0' && CharacterExists(os.ToString()));
-                    _selectedCharacterButton.BorderThickness = new Thickness(1);
-                    _selectedCharacterButton.BorderBrush     = GetBrush("AppBorderBrush");
-                    _selectedCharacterButton.Background      = oe ? GetBrush("CharExistsBg") : GetBrush("CharMissingBg");
-                }
-
-                _selectedCharacterButton = btn;
-                btn.BorderThickness = new Thickness(2);
-                btn.BorderBrush     = GetBrush("AccentBrush");
-                CurrentCharacter    = c.ToString();
-                CurrentCharacterText.Text = CurrentCharacter;
-                break;
-            }
-        }
-    }
-
     // ─── Init ────────────────────────────────────────────────────
     private string GetTemplateFolder()
     {
@@ -590,7 +588,7 @@ public partial class MainWindow : Window
         InitializeComponent();
         _hk.Load();
         LoadSettings();   // theme + tilt + autosave from settings.json
-        Loaded += (_, _) => { ApplyTheme(_currentThemeId); StartAutoSaveTimer(); MaybeShowOnboarding(); };
+        Loaded += (_, _) => { InitHighContrast(); ApplyTheme(_currentThemeId); ApplyLanguage(); StartAutoSaveTimer(); MaybeShowOnboarding(); DetectSttEnvironment(); };
 
         Resources["StrokeBrush"]       = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
         Resources["LoadedStrokeBrush"] = new SolidColorBrush(Color.FromRgb(0x56, 0x9C, 0xD6));
@@ -625,8 +623,8 @@ public partial class MainWindow : Window
             RandomRotLabel.Text          = $"±{_randomRotation:0.#}°";
             RandomYLabel.Text            = $"±{_randomOffsetY:0.#}px";
 
-            UpdateVariantButtons();
             GhostToggleBtn.Background  = GetBrush("AccentBrush");
+            GuidesToggleBtn.Background = GetBrush("AccentBrush");
             EditActiveCharLabel.Text = _editActiveChar.ToString();
             UpdateBrushShapeButtons();
             BrushSizeLabel.Text     = _strokeWidth.ToString("0.#");
@@ -650,17 +648,42 @@ public partial class MainWindow : Window
 
         CreateCharacterGrid();
         CurrentCharacter = "A";
-        CurrentCharacterText.Text = "A";
     }
 
     // ─── Alphabet grid height ─────────────────────────────────────
     private void UpdateAlphabetGridHeight()
     {
         if (AlphabetScrollViewer.ActualWidth <= 0) return;
+        if (_focusMode)
+        {
+            AlphabetGridHost.Height = Math.Max(100, AlphabetScrollViewer.ActualHeight);
+            AlphabetEditCanvas.InvalidateVisual();
+            return;
+        }
         int cols = Math.Max(1, (int)(AlphabetScrollViewer.ActualWidth / GridCellW));
         int rows = (int)Math.Ceiling((double)AllChars.Length / cols);
         AlphabetGridHost.Height = rows * GridCellH;
         AlphabetEditCanvas.InvalidateVisual();
+    }
+
+    // ─── Zoom (Ctrl+wheel) for fine drawing detail ────────────────
+    private void SetEditZoom(double z)
+    {
+        z = Math.Clamp(z, 0.5, 4.0);
+        if (Math.Abs(z - _editZoom) < 0.001) return;
+        if (_strokes.Count > 0) SaveEditActiveChar();   // persist at the old scale…
+        _editZoom = z;
+        LoadEditActiveChar();                            // …reload rescaled to the new one
+        UpdateAlphabetGridHeight();
+        AlphabetEditCanvas?.InvalidateVisual();
+        FontPreviewCanvas?.InvalidateVisual();
+    }
+
+    private void AlphabetCanvas_PreviewMouseWheel(object sender, System.Windows.Input.MouseWheelEventArgs e)
+    {
+        if (Keyboard.Modifiers != ModifierKeys.Control) return;
+        e.Handled = true;   // zoom instead of scroll
+        SetEditZoom(_editZoom * (e.Delta > 0 ? 1.15 : 1.0 / 1.15));
     }
 
     // ─── Cache ────────────────────────────────────────────────────
@@ -709,6 +732,7 @@ public partial class MainWindow : Window
             ShowToast($"Couldn't save character: {ex.Message}", ToastKind.Warning);
             return;
         }
+        InvalidateVariantCache(_editActiveChar);   // this variant file now exists
         _charCache[_editActiveChar] = (_strokes.Select(s => s.ToList()).ToList(), GridCellW, GridCellH);
         _charPressures[_editActiveChar] = _strokes
             .Select(s => _pressureByStroke.TryGetValue(s, out var pr)
@@ -770,15 +794,24 @@ public partial class MainWindow : Window
         var brush = new SolidColorBrush(col);
         if (EditCharColorSwatch != null)  EditCharColorSwatch.Background  = brush;
         if (InlineColorPreview  != null)  InlineColorPreview.Background   = brush;
-        // Sync inline picker HSV
-        var (h, s, v) = CpRgbToHsv(col);
-        _cpHue = h; _cpSat = s; _cpVal = v;
-        CpSyncInputs();
-        InlineSvCanvas?.InvalidateVisual();
-        InlineHueCanvas?.InvalidateVisual();
     }
 
     private void EditCharColorSwatch_Click(object sender, System.Windows.Input.MouseButtonEventArgs e) { }
+
+    // Char ink colour via the shared colour picker (same component as note covers
+    // and Type text colour).
+    private void EditCharColor_Click(object sender, RoutedEventArgs e)
+    {
+        var current = _editCharColors.TryGetValue(_editActiveChar, out var c)
+            ? c : System.Windows.Media.Color.FromRgb(0xE8, 0xE8, 0xE8);
+        var picker = new ColorPickerWindow(current) { Owner = this };
+        if (picker.ShowDialog() != true) return;
+        _editCharColors[_editActiveChar] = picker.SelectedColor;
+        UpdateEditColorSwatch();
+        SaveEditActiveCharColor();
+        AlphabetEditCanvas?.InvalidateVisual();
+        FontPreviewCanvas?.InvalidateVisual();
+    }
 
 
     private void SaveEditActiveCharColor()
@@ -801,6 +834,17 @@ public partial class MainWindow : Window
         var canvas = e.Surface.Canvas;
         float totalW = e.Info.Width;
         canvas.Clear(GetSkColor("CanvasBg", new SKColor(0x1A, 0x1A, 0x1A)));
+
+        if (_focusMode)
+        {
+            var (tx, ty, s) = FocusTransform();
+            canvas.Save();
+            canvas.Translate((float)tx, (float)ty);
+            canvas.Scale((float)s);
+            DrawGridCell(canvas, _editActiveChar, 0, 0, active: true);
+            canvas.Restore();
+            return;
+        }
 
         var chars = AllChars;
         int cols = Math.Max(1, (int)(totalW / GridCellW));
@@ -827,6 +871,43 @@ public partial class MainWindow : Window
         canvas.DrawRect(cx + bw/2, cy + bw/2, cw - bw, ch - bw,
             new SKPaint { Color = active ? GetSkColor("AccentBrush", new SKColor(0x56,0x9C,0xD6)) : new SKColor(0x3F, 0x3F, 0x46),
                           Style = SKPaintStyle.Stroke, StrokeWidth = bw, IsAntialias = true });
+
+        // proportion guides — keep letter heights/baseline consistent across glyphs.
+        // baseline sits at 0.75·h to match the exported metrics (StrokeData.Baseline).
+        if (_showGuides)
+        {
+            float pad = cw * 0.10f;
+            float gx0 = cx + pad, gx1 = cx + cw - pad;
+            float baseline   = cy + ch * 0.75f;
+            float xheight     = cy + ch * 0.45f;
+            float capline     = cy + ch * 0.22f;
+            float ascender    = cy + ch * 0.14f;
+            float descender   = cy + ch * 0.90f;
+
+            void Guide(float y, byte a, bool dash)
+            {
+                using var gp = new SKPaint
+                {
+                    Color = new SKColor(0x8B, 0x7D, 0xC4, a), StrokeWidth = 1f, IsAntialias = true,
+                    PathEffect = dash ? SKPathEffect.CreateDash(new[] { 3f, 4f }, 0) : null,
+                };
+                canvas.DrawLine(gx0, y, gx1, y, gp);
+            }
+            Guide(ascender,  18, true);
+            Guide(capline,   30, true);
+            Guide(xheight,   30, true);
+            Guide(baseline,  90, false);   // baseline — most prominent
+            Guide(descender, 18, true);
+
+            if (active)
+            {
+                using var gl = new SKPaint { TextSize = 8, Color = new SKColor(0x8B, 0x7D, 0xC4, 150),
+                    TextAlign = SKTextAlign.Left, IsAntialias = true };
+                canvas.DrawText("base",  gx0, baseline - 2, gl);
+                canvas.DrawText("x",     gx0, xheight - 2,  gl);
+                canvas.DrawText("cap",   gx0, capline - 2,  gl);
+            }
+        }
 
         // ghost letter (reference outline behind your strokes)
         if (_showGhost)
@@ -967,8 +1048,17 @@ public partial class MainWindow : Window
         canvas.DrawPath(path, _sharedFillPaint);
     }
 
-    // ── Live font preview (pangram from current template glyphs) ──
-    private const string PreviewText = "The quick brown fox";
+    // ── Live font preview (custom or pangram text from current glyphs) ──
+    private string _previewText = "The quick brown fox";
+
+    private void PreviewTextBox_Changed(object sender, TextChangedEventArgs e)
+    {
+        if (sender is TextBox tb)
+        {
+            _previewText = string.IsNullOrEmpty(tb.Text) ? "The quick brown fox" : tb.Text;
+            FontPreviewCanvas?.InvalidateVisual();
+        }
+    }
 
     private void FontPreviewCanvas_PaintSurface(object sender, SKPaintSurfaceEventArgs e)
     {
@@ -982,7 +1072,7 @@ public partial class MainWindow : Window
         double pad = 10;
         var glyphs = new List<(StrokeData sd, double x, double gscale)>();
         double cursor = 0;
-        foreach (char ch in PreviewText)
+        foreach (char ch in _previewText)
         {
             if (ch == ' ') { cursor += targetH * 0.34; continue; }
             var variants = GetAllVariantPaths(ch);
@@ -1038,8 +1128,33 @@ public partial class MainWindow : Window
     }
 
     // ─── Alphabet mouse handlers ──────────────────────────────────
+    // ── Focus mode: edit the active glyph alone, filling the canvas ──
+    private bool _focusMode;
+
+    // scale + offset that fits one cell into the canvas viewport, centred.
+    private (double tx, double ty, double s) FocusTransform()
+    {
+        double vw = AlphabetInputCanvas.ActualWidth, vh = AlphabetInputCanvas.ActualHeight;
+        double s  = Math.Min(vw / GridCellW, vh / GridCellH) * 0.92;
+        return ((vw - GridCellW * s) / 2, (vh - GridCellH * s) / 2, s);
+    }
+
+    // Map a raw canvas point into logical cell space (identity unless focused),
+    // so storage stays in GridCellW/H units regardless of the visual zoom.
+    private Point MapInput(Point p)
+    {
+        if (!_focusMode) return p;
+        var (tx, ty, s) = FocusTransform();
+        return new Point((p.X - tx) / s, (p.Y - ty) / s);
+    }
+
     private (char c, float cellX, float cellY) GridCellAt(Point p)
     {
+        if (_focusMode)
+        {
+            if (p.X < 0 || p.Y < 0 || p.X > GridCellW || p.Y > GridCellH) return ('\0', 0, 0);
+            return (_editActiveChar, 0, 0);
+        }
         float cw = (float)AlphabetInputCanvas.ActualWidth;
         int cols = Math.Max(1, (int)(cw / GridCellW));
         int col = (int)(p.X / GridCellW);
@@ -1051,12 +1166,12 @@ public partial class MainWindow : Window
         return (chars[idx], col * GridCellW, row * GridCellH);
     }
 
-    private void Alphabet_MouseDown(object sender, MouseButtonEventArgs e)
+    // ── Shared drawing core (used by both mouse and native stylus paths) ──
+    // Returns true when a stroke actually began (caller should capture input).
+    private bool BeginGridStroke(Point pos, double pressure)
     {
-        if (_eraserMode) { Alphabet_MouseRightDown(sender, new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Right) { RoutedEvent = e.RoutedEvent }); return; }
-        var pos = e.GetPosition(AlphabetInputCanvas);
         var (c, cx, cy) = GridCellAt(pos);
-        if (c == '\0') return;
+        if (c == '\0') return false;
 
         if (c != _editActiveChar)
         {
@@ -1065,41 +1180,34 @@ public partial class MainWindow : Window
             LoadEditActiveChar();
             EditActiveCharLabel.Text = c.ToString();
             CurrentCharacter = c.ToString();
-            // First click just selects the cell — don't start drawing yet
-            _isFirstMouseDown = true;
+            // Clicking a different cell only selects it — next press draws.
             AlphabetEditCanvas.InvalidateVisual();
-            return;
+            return false;
         }
-
-        if (_isFirstMouseDown) { _isFirstMouseDown = false; return; }
 
         _editCellOrigin = new Point(cx, cy);
         _isDrawingOnGrid = true;
         _redoStack.Clear();
         _hasUnsavedChanges = true;
-
-        var localPt = new Point(pos.X - cx, pos.Y - cy);
-        _editCurrentStroke = [localPt];
+        _editCurrentStroke = [new Point(pos.X - cx, pos.Y - cy)];
         _strokes.Add(_editCurrentStroke);
-        _pressureByStroke[_editCurrentStroke] = [CurrentInputPressure];
-        AlphabetInputCanvas.CaptureMouse();
+        _pressureByStroke[_editCurrentStroke] = [pressure];
         AlphabetEditCanvas.InvalidateVisual();
+        return true;
     }
 
-    private void Alphabet_MouseMove(object sender, MouseEventArgs e)
+    private void ContinueGridStroke(Point pos, double pressure)
     {
         if (!_isDrawingOnGrid || _editCurrentStroke == null) return;
-        var pos = e.GetPosition(AlphabetInputCanvas);
         _editCurrentStroke.Add(new Point(pos.X - _editCellOrigin.X, pos.Y - _editCellOrigin.Y));
-        if (_pressureByStroke.TryGetValue(_editCurrentStroke, out var pr)) pr.Add(CurrentInputPressure);
+        if (_pressureByStroke.TryGetValue(_editCurrentStroke, out var pr)) pr.Add(pressure);
         AlphabetEditCanvas.InvalidateVisual();
     }
 
-    private void Alphabet_MouseUp(object sender, MouseButtonEventArgs e)
+    private void EndGridStroke()
     {
         if (!_isDrawingOnGrid) return;
         _isDrawingOnGrid = false;
-        AlphabetInputCanvas.ReleaseMouseCapture();
         if (_smoothingPasses > 0 && _editCurrentStroke is { Count: > 3 })
         {
             int idx = _strokes.IndexOf(_editCurrentStroke);
@@ -1107,7 +1215,6 @@ public partial class MainWindow : Window
             {
                 var smoothed = _editCurrentStroke;
                 for (int i = 0; i < _smoothingPasses; i++) smoothed = SmoothStroke(smoothed);
-                // carry pressure across smoothing (count preserved); re-key the dict
                 if (_pressureByStroke.Remove(_editCurrentStroke, out var oldPr))
                     _pressureByStroke[smoothed] = oldPr.Count == smoothed.Count
                         ? oldPr : Enumerable.Repeat(1.0, smoothed.Count).ToList();
@@ -1120,9 +1227,30 @@ public partial class MainWindow : Window
         CreateCharacterGrid();
     }
 
+    private void Alphabet_MouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (_penActive || IsTouch(e.StylusDevice)) return;   // pen/finger handled elsewhere
+        if (_eraserMode) { Alphabet_MouseRightDown(sender, new MouseButtonEventArgs(e.MouseDevice, e.Timestamp, MouseButton.Right) { RoutedEvent = e.RoutedEvent }); return; }
+        if (BeginGridStroke(MapInput(e.GetPosition(AlphabetInputCanvas)), 1.0))
+            AlphabetInputCanvas.CaptureMouse();
+    }
+
+    private void Alphabet_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_penActive || IsTouch(e.StylusDevice)) return;
+        ContinueGridStroke(MapInput(e.GetPosition(AlphabetInputCanvas)), 1.0);
+    }
+
+    private void Alphabet_MouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_penActive || IsTouch(e.StylusDevice)) return;
+        AlphabetInputCanvas.ReleaseMouseCapture();
+        EndGridStroke();
+    }
+
     private void Alphabet_MouseRightDown(object sender, MouseButtonEventArgs e)
     {
-        var pos = e.GetPosition(AlphabetInputCanvas);
+        var pos = MapInput(e.GetPosition(AlphabetInputCanvas));
         var (c, cx, cy) = GridCellAt(pos);
         if (c == '\0') return;
 
@@ -1180,7 +1308,24 @@ public partial class MainWindow : Window
         };
         UpdateBrushShapeButtons();
         CalligAnglePanel.Visibility = _brushShape == BrushShape.Calligraphy ? Visibility.Visible : Visibility.Collapsed;
+        // Calligraphy's angle control lives in the advanced panel — reveal it so
+        // the setting isn't hidden when the user picks that brush.
+        if (_brushShape == BrushShape.Calligraphy) SetAdvancedBrushOpen(true);
         BrushPreviewCanvas?.InvalidateVisual();
+    }
+
+    private bool _advancedBrushOpen;
+
+    private void AdvancedBrushToggle_Click(object sender, RoutedEventArgs e)
+        => SetAdvancedBrushOpen(!_advancedBrushOpen);
+
+    private void SetAdvancedBrushOpen(bool open)
+    {
+        _advancedBrushOpen = open;
+        if (AdvancedBrushPanel == null) return;
+        AdvancedBrushPanel.Visibility = open ? Visibility.Visible : Visibility.Collapsed;
+        AdvancedBrushChevron.Text = open ? "▾" : "▸";   // down / right triangle
+        AdvancedBrushLabel.Text   = open ? "Fewer options" : "More options";
     }
 
     private void UpdateBrushShapeButtons()
@@ -1312,12 +1457,59 @@ public partial class MainWindow : Window
 
     private System.Diagnostics.Process? _sttProcess;
     private int    _sttSeconds = 5;
-    private string _sttLang    = "pl";
+    private string _sttLang    = "en";
+
+    // null = not checked yet, true/false = python + stt.py present.
+    private bool? _sttAvailable;
+
+    // Probe for the optional voice dependency (Python + stt.py) once, off the UI
+    // thread, and reflect the result on the Voice button.
+    private void DetectSttEnvironment()
+    {
+        Task.Run(() =>
+        {
+            bool ok = false;
+            try
+            {
+                if (File.Exists(System.IO.Path.GetFullPath(SttScriptPath)))
+                {
+                    var psi = new System.Diagnostics.ProcessStartInfo
+                    {
+                        FileName = "python", Arguments = "--version",
+                        RedirectStandardOutput = true, RedirectStandardError = true,
+                        UseShellExecute = false, CreateNoWindow = true,
+                    };
+                    using var p = System.Diagnostics.Process.Start(psi);
+                    if (p != null) { p.WaitForExit(4000); ok = p.HasExited && p.ExitCode == 0; }
+                }
+            }
+            catch { ok = false; }
+
+            Dispatcher.Invoke(() =>
+            {
+                _sttAvailable = ok;
+                if (!_isListening && SttStatusLabel != null)
+                    SttStatusLabel.Text = ok ? "push to talk" : "setup required";
+            });
+        });
+    }
+
+    private void ShowSttSetupHelp()
+    {
+        MessageBox.Show(
+            "Voice input needs Python with a few packages.\n\n" +
+            "1. Install Python 3.10+ and make sure it's on your PATH.\n" +
+            "2. Run:  pip install faster-whisper sounddevice scipy numpy\n\n" +
+            "Then restart nottwrite — the Voice button will activate.",
+            "Voice input — setup required",
+            MessageBoxButton.OK, MessageBoxImage.Information);
+    }
 
     private void SpeechBtn_Click(object sender, RoutedEventArgs e)
     {
-        if (_isListening) StopSpeech();
-        else              StartSpeech();
+        if (_isListening) { StopSpeech(); return; }
+        if (_sttAvailable == false) { ShowSttSetupHelp(); return; }
+        StartSpeech();
     }
 
     private void StartSpeech()
@@ -1377,6 +1569,16 @@ public partial class MainWindow : Window
                 proc.WaitForExit();
                 Dispatcher.Invoke(() => StopSpeech());
             }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                // python.exe not found on PATH — dependency missing
+                Dispatcher.Invoke(() =>
+                {
+                    _sttAvailable = false;
+                    StopSpeech();
+                    ShowSttSetupHelp();
+                });
+            }
             catch (Exception ex)
             {
                 Dispatcher.Invoke(() =>
@@ -1396,7 +1598,8 @@ public partial class MainWindow : Window
         _isListening         = false;
         SpeechBtn.Background = GetBrush("ButtonBg");
         SpeechBtnIcon.Text   = "🎤";
-        if (SttStatusLabel != null) SttStatusLabel.Text = "";
+        if (SttStatusLabel != null)
+            SttStatusLabel.Text = _sttAvailable == false ? "setup required" : "push to talk";
     }
 
     protected override void OnClosed(EventArgs e)
@@ -1709,9 +1912,6 @@ public partial class MainWindow : Window
     }
 
     // ─── Character grid (hidden compat) ──────────────────────────
-    private bool CharacterExists(string character) =>
-        File.Exists(GetCharacterFilePath(character[0]));
-
     private void UpdateProgress()
     {
         UpdateAlphabetProgress();
@@ -1731,9 +1931,10 @@ public partial class MainWindow : Window
         // global indicator on the Edit nav button (always visible)
         if (EditCountText != null) EditCountText.Text = $"{done}/{total}";
         if (EditNavSubtitle != null)
-            EditNavSubtitle.Text = done == 0 ? "draw characters"
-                                 : done >= total ? "font complete ✓"
-                                 : $"{done} of {total} drawn";
+            EditNavSubtitle.Text = done == 0 ? T("draw characters")
+                                 : done >= total ? T("font complete ✓")
+                                 : (_lang == "pl" ? $"{done} z {total} narysowanych"
+                                                  : $"{done} of {total} drawn");
 
         UpdateFontIncompleteBanner();
     }
@@ -1783,149 +1984,12 @@ public partial class MainWindow : Window
         FontIncompleteBanner.Visibility = Visibility.Collapsed;
     }
 
+    // The visible character grid is the Skia AlphabetEditCanvas; this only
+    // refreshes the progress counter and live font preview after a change.
     private void CreateCharacterGrid()
     {
-        CharacterGrid.Children.Clear();
-
-        var groups = new List<(char primary, char secondary)>();
-        for (char c = 'A'; c <= 'Z'; c++)
-            groups.Add((c, char.ToLower(c)));
-        foreach (char c in AllChars.Where(ch => !char.IsLetter(ch)))
-            groups.Add((c, '\0'));
-        foreach (char c in _customChars.Where(ch => !char.IsLetter(ch)))
-            groups.Add((c, '\0'));
-        foreach (char c in _customChars.Where(ch => char.IsLetter(ch) && (ch < 'A' || ch > 'Z') && (ch < 'a' || ch > 'z')))
-        {
-            char upper = char.ToUpper(c);
-            char lower = char.ToLower(c);
-            if (upper != lower)
-                groups.Add((upper, lower));
-            else
-                groups.Add((c, '\0'));
-        }
-
-        var existsBg = GetBrush("CharExistsBg");
-        var missingBg = GetBrush("CharMissingBg");
-        var existsFg  = GetBrush("CharExistsFg");
-        var missingFg = GetBrush("CharMissingFg");
-        var borderBr  = GetBrush("AppBorderBrush");
-        var secondaryTxt = GetBrush("SecondaryText");
-
-        foreach (var (primary, secondary) in groups)
-        {
-            bool primaryExists   = CharacterExists(primary.ToString());
-            bool secondaryExists = secondary != '\0' && CharacterExists(secondary.ToString());
-            bool anyExists       = primaryExists || secondaryExists;
-
-            var content = new Grid();
-            content.Children.Add(new TextBlock
-            {
-                Text               = primary.ToString(),
-                FontSize           = secondary != '\0' ? 17 : 20,
-                FontWeight         = FontWeights.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment  = VerticalAlignment.Center,
-                Foreground         = primaryExists ? existsFg : missingFg,
-            });
-            if (secondary != '\0')
-            {
-                content.Children.Add(new TextBlock
-                {
-                    Text               = secondary.ToString(),
-                    FontSize           = 10,
-                    HorizontalAlignment = HorizontalAlignment.Right,
-                    VerticalAlignment  = VerticalAlignment.Bottom,
-                    Margin             = new Thickness(0, 0, 3, 3),
-                    Foreground         = secondaryExists ? existsFg : secondaryTxt,
-                    Opacity            = 0.75,
-                });
-            }
-
-            var button = new Button
-            {
-                Content         = content,
-                Height          = 52,
-                Margin          = new Thickness(3),
-                Tag             = (primary, secondary),
-                Background      = anyExists ? existsBg : missingBg,
-                BorderThickness = new Thickness(1),
-                BorderBrush     = borderBr,
-            };
-
-            button.Click += CharacterButton_Click;
-            CharacterGrid.Children.Add(button);
-        }
-
         UpdateAlphabetProgress();
         FontPreviewCanvas?.InvalidateVisual();
-    }
-
-    private void CharacterButton_Click(object sender, RoutedEventArgs e)
-    {
-        if (sender is not Button button) return;
-        if (_hasUnsavedChanges) SaveEditActiveChar();
-
-        var (primary, secondary) = ((char, char))button.Tag;
-
-        if (button == _selectedCharacterButton && secondary != '\0')
-        {
-            bool isCurrentlyPrimary = CurrentCharacter == primary.ToString();
-            CurrentCharacter = isCurrentlyPrimary ? secondary.ToString() : primary.ToString();
-        }
-        else
-        {
-            if (_selectedCharacterButton != null)
-            {
-                var (op, os) = ((char, char))_selectedCharacterButton.Tag;
-                bool oe = CharacterExists(op.ToString()) || (os != '\0' && CharacterExists(os.ToString()));
-                _selectedCharacterButton.BorderThickness = new Thickness(1);
-                _selectedCharacterButton.BorderBrush     = GetBrush("AppBorderBrush");
-                _selectedCharacterButton.Background      = oe ? GetBrush("CharExistsBg") : GetBrush("CharMissingBg");
-                RefreshButtonDisplay(_selectedCharacterButton, op, os, showPrimary: true);
-            }
-
-            _selectedCharacterButton = button;
-            button.BorderThickness   = new Thickness(2);
-            button.BorderBrush       = GetBrush("AccentBrush");
-            CurrentCharacter         = primary.ToString();
-        }
-
-        RefreshButtonDisplay(button, primary, secondary, showPrimary: CurrentCharacter == primary.ToString());
-        CurrentCharacterText.Text = CurrentCharacter;
-        // Navigate edit grid to this char
-        char c = CurrentCharacter[0];
-        if (c != _editActiveChar)
-        {
-            SaveEditActiveChar();
-            _editActiveChar = c;
-            LoadEditActiveChar();
-            EditActiveCharLabel.Text = c.ToString();
-        }
-    }
-
-    private void RefreshButtonDisplay(Button btn, char primary, char secondary, bool showPrimary)
-    {
-        if (btn.Content is not Grid grid) return;
-        char shown = showPrimary ? primary : secondary;
-        char other = showPrimary ? secondary : primary;
-
-        if (grid.Children.Count > 0 && grid.Children[0] is TextBlock big)
-        {
-            big.Text       = shown.ToString();
-            bool exists    = CharacterExists(shown.ToString());
-            big.Foreground = exists ? GetBrush("CharExistsFg") : GetBrush("CharMissingFg");
-        }
-
-        if (grid.Children.Count > 1 && grid.Children[1] is TextBlock small && secondary != '\0')
-        {
-            small.Text       = other.ToString();
-            bool exists      = CharacterExists(other.ToString());
-            small.Foreground = exists ? GetBrush("CharExistsFg") : GetBrush("SecondaryText");
-        }
-
-        bool shownExists = CharacterExists(shown.ToString());
-        bool otherExists = secondary != '\0' && CharacterExists(other.ToString());
-        btn.Background = (shownExists || otherExists) ? GetBrush("CharExistsBg") : GetBrush("CharMissingBg");
     }
 
     private void LoadCurrentCharacter()
@@ -1966,14 +2030,33 @@ public partial class MainWindow : Window
         return System.IO.Path.Combine(GetTemplateFolder(), $"{prefix}_{name}{suffix}.json");
     }
 
+    // Variant-existence cache, scoped to the current template. Avoids hitting the
+    // filesystem (up to 3× File.Exists per character) on every Type layout/paint
+    // pass — the hot path that otherwise caused stutter on long notes.
+    // Returned lists are treated as read-only by all callers; do not mutate them.
+    private readonly Dictionary<char, List<string>> _variantPathCache = new();
+    private string? _variantCacheTemplate;
+
+    private void InvalidateVariantCache() => _variantPathCache.Clear();
+    private void InvalidateVariantCache(char character) => _variantPathCache.Remove(character);
+
     private List<string> GetAllVariantPaths(char character)
     {
+        if (_variantCacheTemplate != CurrentTemplate)
+        {
+            _variantPathCache.Clear();
+            _variantCacheTemplate = CurrentTemplate;
+        }
+        if (_variantPathCache.TryGetValue(character, out var cached))
+            return cached;
+
         var paths = new List<string>();
         for (int v = 1; v <= 3; v++)
         {
             string p = GetCharacterFilePath(character, v);
             if (File.Exists(p)) paths.Add(p);
         }
+        _variantPathCache[character] = paths;
         return paths;
     }
 
@@ -2046,6 +2129,7 @@ public partial class MainWindow : Window
         _charPressures.Remove(_editActiveChar);
         string path = GetCharacterFilePath(_editActiveChar, _currentVariant);
         if (File.Exists(path)) File.Delete(path);
+        InvalidateVariantCache(_editActiveChar);   // variant file removed
         _charCache.Remove(_editActiveChar);
         AlphabetEditCanvas?.InvalidateVisual();
         UpdateAlphabetProgress();
@@ -2105,6 +2189,19 @@ public partial class MainWindow : Window
         if (k == Key.K && (m & ModifierKeys.Control) != 0)
         {
             ToggleCommandPalette();
+            e.Handled = true;
+            return;
+        }
+        // Keyboard shortcuts (F1)
+        if (k == Key.F1)
+        {
+            ToggleShortcuts();
+            e.Handled = true;
+            return;
+        }
+        if (k == Key.Escape && ShortcutsOverlay.Visibility == Visibility.Visible)
+        {
+            CloseShortcuts();
             e.Handled = true;
             return;
         }
@@ -2383,8 +2480,21 @@ public partial class MainWindow : Window
         InvalidateLayout(); RefreshGeneratedText();
     }
 
-    private void ExportMenuBtn_Click(object sender, RoutedEventArgs e) =>
+    private void ExportMenuBtn_Click(object sender, RoutedEventArgs e)
+    {
+        // Font export is the primary result in Edit mode — surface it here so it
+        // isn't buried in the Template panel.
+        if (FontExportSection != null)
+            FontExportSection.Visibility = _appMode == AppMode.Edit
+                ? Visibility.Visible : Visibility.Collapsed;
         ExportPopup.IsOpen = !ExportPopup.IsOpen;
+    }
+
+    private void ExportFontFromMenu_Click(object sender, RoutedEventArgs e)
+    {
+        ExportPopup.IsOpen = false;
+        ExportFontButton_Click(sender, e);
+    }
 
     private void SpacingSlider_Changed(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
@@ -2704,7 +2814,7 @@ public partial class MainWindow : Window
 
         if (isEdit)
         {
-            CenterPanelTitle.Text = "ALPHABET EDIT";
+            CenterPanelTitle.Text = "ALPHABET EDIT  ·  Ctrl+scroll to zoom";
             _displayMode = DisplayMode.Alphabet;
             _cursorTimer?.Stop();
             LoadAllCharsCache();
@@ -2744,6 +2854,7 @@ public partial class MainWindow : Window
         }
 
         UpdateFontIncompleteBanner();
+        RefreshModeTitle();   // localized title overrides the literals above
 
         if (changed) FadeCenterContent();
     }

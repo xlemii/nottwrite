@@ -21,7 +21,7 @@ public partial class MainWindow
     };
 
     // default = the original built-in set
-    private HashSet<string> _enabledCats = new() { "upper", "lower", "digits", "punct", "polish" };
+    private HashSet<string> _enabledCats = new() { "upper", "lower", "digits", "punct" };
 
     private string BuildCharSet()
     {

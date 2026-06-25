@@ -14,6 +14,7 @@ public partial class MainWindow
         public int    AutoSaveMinutes { get; set; } = 5;
         public bool   OnboardingSeen  { get; set; } = false;
         public string? CharCategories { get; set; } = null;
+        public string Language        { get; set; } = "en";
     }
 
     public bool OnboardingSeen;
@@ -47,6 +48,7 @@ public partial class MainWindow
         AutoSaveMinutes = s.AutoSaveMinutes > 0 ? s.AutoSaveMinutes : 5;
         OnboardingSeen  = s.OnboardingSeen;
         SetEnabledCatsCsv(s.CharCategories);
+        _lang = s.Language == "pl" ? "pl" : "en";
     }
 
     /// Persist the current settings to settings.json.
@@ -60,6 +62,7 @@ public partial class MainWindow
             AutoSaveMinutes = AutoSaveMinutes,
             OnboardingSeen  = OnboardingSeen,
             CharCategories  = EnabledCatsCsv,
+            Language        = _lang,
         };
         try { File.WriteAllText(AppSettingsPath, JsonSerializer.Serialize(s, _settingsJson)); }
         catch { }

@@ -13,34 +13,26 @@ public partial class MainWindow
     private Dictionary<string, byte[]> _noteImages = new();
     private readonly Dictionary<string, SKImage> _imageCache = new();
 
+    // Load a note's images from their files (referenced by id in the note's chars).
     private void LoadNoteImages(NoteEntry note)
     {
         _noteImages = new();
         _imageCache.Clear();
-        if (note.Images == null) return;
-        foreach (var (id, b64) in note.Images)
+        var ids = (note.Chars ?? new())
+            .Where(c => c.ImageId != null).Select(c => c.ImageId!).Distinct();
+        foreach (var id in ids)
         {
             try
             {
-                var bytes = Convert.FromBase64String(b64);
+                string p = NoteImagePath(id);
+                if (!File.Exists(p)) continue;
+                var bytes = File.ReadAllBytes(p);
                 _noteImages[id] = bytes;
                 var img = SKImage.FromEncodedData(bytes);
                 if (img != null) _imageCache[id] = img;
             }
             catch { }
         }
-    }
-
-    // Only keep images still referenced by the note's chars.
-    private Dictionary<string, string>? CollectNoteImages()
-    {
-        var used = _typeChars.Where(c => c.ImageId != null).Select(c => c.ImageId!).ToHashSet();
-        if (used.Count == 0) return null;
-        var dict = new Dictionary<string, string>();
-        foreach (var id in used)
-            if (_noteImages.TryGetValue(id, out var bytes))
-                dict[id] = Convert.ToBase64String(bytes);
-        return dict;
     }
 
     private (double W, double H) ImageDisplaySize(string id, double lineW)
@@ -87,6 +79,9 @@ public partial class MainWindow
         string id = Guid.NewGuid().ToString("N");
         _noteImages[id] = bytes;
         _imageCache[id] = img;
+        // persist the image as a file immediately; the note only stores its id
+        try { Directory.CreateDirectory(NotesImageDir); File.WriteAllBytes(NoteImagePath(id), bytes); }
+        catch (Exception ex) { ShowToast("Couldn't save image: " + ex.Message, ToastKind.Warning); }
 
         PushUndo();
         // isolate image on its own line

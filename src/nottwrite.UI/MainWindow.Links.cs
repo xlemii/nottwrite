@@ -66,6 +66,7 @@ public partial class MainWindow
         var note = new NoteEntry(Guid.NewGuid().ToString("N"), title, new(), now, _notes.Count % NoteCovers.Length,
             CreatedAt: now, FolderId: _activeFolderId, Template: CurrentTemplate, FontName: _typeFontName);
         _notes.Insert(0, note);
+        PersistNoteContent(note.Id);
         PersistNotes();
         ShowEditor(note.Id);
         ShowToast($"Opened '{title}'", ToastKind.Info);

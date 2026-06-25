@@ -46,6 +46,21 @@ public sealed class TrueTypeFontBuilder
         _cmap[unicode] = _glyphs.Count - 1;
     }
 
+    // (baseGid, [alt glyph ids]) — drives the `calt` rotation in GSUB.
+    private readonly List<(int baseGid, List<int> alts)> _variantSets = new();
+
+    /// Add a character's default glyph (mapped in cmap) plus alternate forms
+    /// (extra glyph ids, not mapped) so the font can rotate between them via calt.
+    public void AddGlyphWithVariants(int unicode, Glyph baseGlyph, IReadOnlyList<Glyph> alts)
+    {
+        AddGlyph(unicode, baseGlyph);
+        int baseGid = _glyphs.Count - 1;
+        if (alts == null || alts.Count == 0) return;
+        var altGids = new List<int>();
+        foreach (var a in alts) { _glyphs.Add(a); altGids.Add(_glyphs.Count - 1); }
+        _variantSets.Add((baseGid, altGids));
+    }
+
     public int GlyphCount => _glyphs.Count;
 
     // ───────────────────────── building ──────────────────────────
@@ -67,6 +82,18 @@ public sealed class TrueTypeFontBuilder
             ["name"] = BuildName(),
             ["post"] = BuildPost(),
         };
+
+        // Optional contextual-alternates rotation over variant glyphs. Built
+        // defensively — if anything goes wrong the font still ships without it.
+        if (_variantSets.Count > 0)
+        {
+            try
+            {
+                var gsub = GsubBuilder.Build(_cmap.Values, _variantSets);
+                if (gsub != null) tables["GSUB"] = gsub;
+            }
+            catch { /* skip calt, keep a valid font */ }
+        }
 
         return Assemble(tables);
     }
@@ -226,7 +253,7 @@ public sealed class TrueTypeFontBuilder
         w.I16((short)(_ascender * 9 / 10)); // sCapHeight
         w.U16(0);                     // usDefaultChar
         w.U16(0x20);                  // usBreakChar
-        w.U16(0);                     // usMaxContext
+        w.U16(_variantSets.Count > 0 ? 2 : 0); // usMaxContext (calt: backtrack 1 + input 1)
         return w.ToArray();
     }
 
